@@ -9,8 +9,8 @@
         <StackPanel Padding="32,24" Spacing="12" MaxWidth="980" HorizontalAlignment="Left">
             <TextBlock Text="{x:Bind s:L.Z('环境安装','Setup')}" Style="{StaticResource TitleTextBlockStyle}" />
             <TextBlock Style="{StaticResource Hint}"
-                       Text="{x:Bind s:L.Z('一键下载并配置本地出图所需的全部组件（约 14 GB）。下载支持断点续传并校验 SHA-256；已存在的文件会被跳过。需要 NVIDIA 显卡（建议 8 GB 显存以上）。',
-                                           'Downloads and configures everything needed for local generation (~14 GB). Downloads resume and are SHA-256 verified; files already present are skipped. Requires an NVIDIA GPU (8 GB VRAM or more recommended).')}" />
+                       Text="{x:Bind s:L.Z('一键下载并配置本地出图所需的全部组件（约 14 GB）。下载支持断点续传并校验 SHA-256，某个源不可用时会自动换源；已存在的文件会被跳过。支持 NVIDIA（GTX 900 系起）、AMD（RX 6000 起，Windows 11）与 Intel Arc 显卡，建议 8 GB 显存以上。',
+                                           'Downloads and configures everything needed for local generation (~14 GB). Downloads resume, are SHA-256 verified and switch source automatically when one fails; files already present are skipped. Supports NVIDIA (GTX 900 series and newer), AMD (RX 6000 and newer, Windows 11) and Intel Arc GPUs; 8 GB VRAM or more recommended.')}" />
 
             <Border Style="{StaticResource Panel}">
                 <Grid ColumnSpacing="16" RowSpacing="10">
@@ -20,24 +20,30 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
-                        <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                        <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
                     </Grid.RowDefinitions>
 
                     <TextBlock Text="{x:Bind s:L.Z('显卡','GPU')}" VerticalAlignment="Center" />
                     <TextBlock x:Name="GpuText" Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" />
 
-                    <TextBlock Grid.Row="1" Text="{x:Bind s:L.Z('模型量化','Model quant')}" VerticalAlignment="Center" />
-                    <ComboBox x:Name="QuantBox" Grid.Row="1" Grid.Column="1" MinWidth="360" SelectionChanged="QuantBox_SelectionChanged" />
+                    <TextBlock Grid.Row="1" Text="{x:Bind s:L.Z('运行包','Package')}" VerticalAlignment="Center" />
+                    <ComboBox x:Name="PackageBox" Grid.Row="1" Grid.Column="1" MinWidth="360" SelectionChanged="PackageBox_SelectionChanged" />
 
-                    <TextBlock Grid.Row="2" Text="ComfyUI" VerticalAlignment="Center" />
-                    <TextBox x:Name="ComfyPath" Grid.Row="2" Grid.Column="1" IsReadOnly="True" />
-                    <Button Grid.Row="2" Grid.Column="2" Content="{x:Bind s:L.Z('选择已有 ComfyUI…','Use existing ComfyUI…')}" Click="PickComfy_Click" />
+                    <InfoBar x:Name="GpuWarn" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Severity="Warning" IsClosable="False" />
 
-                    <TextBlock Grid.Row="3" Text="{x:Bind s:L.Z('下载源','Download source')}" VerticalAlignment="Center" />
-                    <ComboBox x:Name="MirrorBox" Grid.Row="3" Grid.Column="1" MinWidth="360" SelectionChanged="MirrorBox_SelectionChanged">
-                        <x:String>https://huggingface.co</x:String>
-                        <x:String>https://hf-mirror.com</x:String>
-                    </ComboBox>
+                    <TextBlock Grid.Row="3" Text="{x:Bind s:L.Z('模型量化','Model quant')}" VerticalAlignment="Center" />
+                    <ComboBox x:Name="QuantBox" Grid.Row="3" Grid.Column="1" MinWidth="360" SelectionChanged="QuantBox_SelectionChanged" />
+
+                    <TextBlock Grid.Row="4" Text="ComfyUI" VerticalAlignment="Center" />
+                    <TextBox x:Name="ComfyPath" Grid.Row="4" Grid.Column="1" IsReadOnly="True" />
+                    <Button Grid.Row="4" Grid.Column="2" Content="{x:Bind s:L.Z('选择已有 ComfyUI…','Use existing ComfyUI…')}" Click="PickComfy_Click" />
+
+                    <TextBlock Grid.Row="5" Text="{x:Bind s:L.Z('下载源','Download source')}" VerticalAlignment="Center" />
+                    <ComboBox x:Name="SourceBox" Grid.Row="5" Grid.Column="1" MinWidth="360" SelectionChanged="SourceBox_SelectionChanged" />
+
+                    <TextBlock Grid.Row="6" Text="{x:Bind s:L.Z('GitHub 代理','GitHub proxy')}" VerticalAlignment="Center" />
+                    <TextBox x:Name="GithubProxyBox" Grid.Row="6" Grid.Column="1" LostFocus="GithubProxyBox_LostFocus"
+                             PlaceholderText="{x:Bind s:L.Z('可选，如 https://ghfast.top/ ，用于下载 ComfyUI 与节点','Optional, e.g. https://ghfast.top/, used for ComfyUI and node downloads')}" />
                 </Grid>
             </Border>
 
@@ -69,7 +75,7 @@
                                 <StackPanel Grid.Column="1" Spacing="4">
                                     <TextBlock Text="{x:Bind Title}" Style="{StaticResource BodyStrongTextBlockStyle}" />
                                     <TextBlock Text="{x:Bind Description, Mode=OneWay}" Style="{StaticResource Hint}" />
-                                    <TextBlock Text="{x:Bind Detail, Mode=OneWay}" Style="{StaticResource Hint}" MaxLines="3" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind Detail, Mode=OneWay}" Style="{StaticResource Hint}" MaxLines="8" TextTrimming="CharacterEllipsis" IsTextSelectionEnabled="True" />
                                     <ProgressBar Value="{x:Bind Progress, Mode=OneWay}" IsIndeterminate="{x:Bind Indeterminate, Mode=OneWay}"
                                                  Visibility="{x:Bind Busy, Mode=OneWay}" />
                                 </StackPanel>

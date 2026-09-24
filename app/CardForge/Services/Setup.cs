@@ -62,11 +62,22 @@ public class SetupStep : Observable
     }
 }
 
-public record ModelFile(string Folder, string Name, string Repo, string RepoPath, long Size, string Sha256)
+/// <param name="OnModelScope">The same files (identical SHA-256) are mirrored under the same repo name on ModelScope.</param>
+public record ModelFile(string Folder, string Name, string Repo, string RepoPath, long Size, string Sha256, bool OnModelScope = true)
 {
     public string Target => Path.Combine(AppPaths.Models, Folder, Name);
-    public string Url(string hf) => $"{hf.TrimEnd('/')}/{Repo}/resolve/main/{RepoPath}";
     public bool Present => File.Exists(Target) && new FileInfo(Target).Length == Size;
+
+    /// <summary>Download URLs in the order to try them for the current download source.</summary>
+    public IEnumerable<string> Urls()
+    {
+        var hf = $"https://huggingface.co/{Repo}/resolve/main/{RepoPath}";
+        var ms = OnModelScope ? $"https://modelscope.cn/models/{Repo}/resolve/master/{RepoPath}" : null;
+        // hf-mirror.com only mirrors metadata: big files still redirect to HuggingFace's CDN, so it goes last
+        var mirror = $"https://hf-mirror.com/{Repo}/resolve/main/{RepoPath}";
+        string?[] order = Setup.China ? [ms, hf, mirror] : [hf, ms, mirror];
+        return order.OfType<string>();
+    }
 }
 
 public static class Setup
@@ -93,7 +104,7 @@ public static class Setup
     public static readonly ModelFile Vae = new("vae", "qwen_image_2.1_vae_bf16.safetensors", ComfyRepo,
         "vae/qwen_image_2.1_vae_bf16.safetensors", 675509688, "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9");
     public static readonly ModelFile Lora = new("loras", LoraName, LoraRepo, LoraName, 100703552,
-        "af780e9a292b658ab896a9b3d9fffb44df7d1c04839189c1fe1fd7cfb3159636");
+        "af780e9a292b658ab896a9b3d9fffb44df7d1c04839189c1fe1fd7cfb3159636");   // ModelScope: tried, used once a mirror exists
 
     static readonly HttpClient Http = CreateHttp();
 
@@ -104,29 +115,47 @@ public static class Setup
         return h;
     }
 
-    public static string HfEndpoint => AppPaths.LoadSettings()["hf_endpoint"]?.GetValue<string>() is { Length: > 0 } e ? e : "https://huggingface.co";
+    // ---- download sources ----------------------------------------------------------------------
 
-    // ---- GPU ---------------------------------------------------------------------------------
+    /// <summary>auto | global (HuggingFace, GitHub, PyPI first) | china (ModelScope, PyPI mirrors first).
+    /// Every download falls back to the other sources automatically.</summary>
+    public static string Source => AppPaths.LoadSettings()["download_source"]?.GetValue<string>() switch
+    {
+        "global" => "global",
+        "china" => "china",
+        _ => "auto",
+    };
 
-    public static int? VramMiB { get; private set; }
-    public static string GpuName { get; private set; } = "";
+    public static bool China => Source == "china" || (Source == "auto" && InChina());
 
-    public static async Task DetectGpu()
+    static bool InChina()
     {
         try
         {
-            var (code, output) = await Run("nvidia-smi", ["--query-gpu=name,memory.total", "--format=csv,noheader,nounits"], null, null, default);
-            var first = output.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Split(',');
-            if (code == 0 && first is { Length: 2 } && int.TryParse(first[1].Trim(), out var mib))
-            {
-                VramMiB = mib;
-                GpuName = first[0].Trim();
-            }
+            return System.Globalization.RegionInfo.CurrentRegion.TwoLetterISORegionName == "CN" ||
+                   TimeZoneInfo.Local.Id == "China Standard Time";
         }
-        catch { VramMiB = null; }
+        catch { return false; }
     }
 
-    public static ModelFile RecommendedQuant => Quants.Last(q => q.MinVramMiB <= (VramMiB ?? 8192)).File;
+    /// <summary>Optional prefix for GitHub downloads (a GitHub download proxy), e.g. "https://ghfast.top/".</summary>
+    public static string GithubProxy => AppPaths.LoadSettings()["github_proxy"]?.GetValue<string>()?.Trim() ?? "";
+
+    static IEnumerable<string> GithubUrls(string url)
+    {
+        if (GithubProxy.Length == 0) return [url];
+        var proxied = GithubProxy.TrimEnd('/') + "/" + url;
+        return China ? [proxied, url] : [url, proxied];
+    }
+
+    static readonly string[] PipIndexes = ["https://pypi.tuna.tsinghua.edu.cn/simple", "https://mirrors.aliyun.com/pypi/simple/"];
+
+    static IEnumerable<string?> PipOrder() => China ? [.. PipIndexes, null] : [null, .. PipIndexes];   // null = pypi.org
+
+    // ---- GPU ---------------------------------------------------------------------------------
+
+    public static ModelFile RecommendedQuant =>
+        Gpu.Package == "cpu" ? Quants[1].File : Quants.Last(q => q.MinVramMiB <= (Gpu.Info.VramMiB ?? 8192)).File;
 
     /// <summary>The quant in use: the configured one if present, else any present quant, else the recommendation.</summary>
     public static ModelFile CurrentQuant
@@ -153,8 +182,8 @@ public static class Setup
         {
             Id = "runtime",
             Title = L.Z("ComfyUI 运行环境", "ComfyUI runtime"),
-            Description = L.Z("ComfyUI 便携版（自带 Python 与 CUDA 版 PyTorch，约 2 GB 下载）。已有 ComfyUI 可在下方选择其文件夹。",
-                              "ComfyUI portable (bundles Python and CUDA PyTorch, ~2 GB download). Already have one? Pick its folder below."),
+            Description = L.Z("ComfyUI 便携版（自带 Python 与对应显卡的 PyTorch，约 2 GB 下载）。运行包按显卡自动选择，也可在上方手动指定。",
+                              "ComfyUI portable (bundles Python and PyTorch for your GPU, ~2 GB download). The package follows your GPU; override it above."),
             Check = () => Task.FromResult(RuntimeOk(out _)),
             Install = InstallRuntime,
         },
@@ -177,6 +206,21 @@ public static class Setup
                 step.Report(L.Z("pip 安装中…", "pip installing…"));
                 await Pip(step, ct, "-r", Path.Combine(AppPaths.Backend, "requirements.txt"));
             },
+        },
+        new()
+        {
+            Id = "gputest",
+            Title = L.Z("显卡自检", "GPU self-test"),
+            Description = L.Z("用 ComfyUI 的 PyTorch 在显卡上做一次小运算，确认驱动、运行包与显卡相互兼容。",
+                              "Runs a small computation on the GPU with ComfyUI's PyTorch to confirm the driver, package and card work together."),
+            Check = async () =>
+            {
+                if (!File.Exists(AppPaths.Python)) return false;
+                if (AppPaths.LoadSettings()["gpu_test_ok"]?.GetValue<string>() == GpuTestKey) return true;
+                try { await GpuSelfTest(null, default); return true; }   // first check on this runtime: just run it (a few seconds)
+                catch { return false; }
+            },
+            Install = GpuSelfTest,
         },
         new()
         {
@@ -238,51 +282,172 @@ public static class Setup
             problem = L.Z("ComfyUI 版本过旧，不支持 Qwen-Image-2.1（安装将执行更新）", "ComfyUI is too old for Qwen-Image-2.1 (install will update it)");
             return false;
         }
+        if (!PackageFits(out var have))
+        {
+            problem = L.Z($"现有 ComfyUI 的 PyTorch 是 {have} 版本，不适用于所选运行包 {Gpu.Package}（安装将下载新的运行包）",
+                          $"The existing ComfyUI has a {have} PyTorch, which does not fit the selected {Gpu.Package} package (install downloads the new one)");
+            return false;
+        }
         return true;
+    }
+
+    /// <summary>The package the current ComfyUI's PyTorch was built for, read from torch/version.py
+    /// ("2.x+cu130" = nvidia, "+cu12x" = nvidia_cu126, "+rocm"/hip = amd, "+xpu" = intel, "+cpu" = cpu).</summary>
+    static string? InstalledPackage
+    {
+        get
+        {
+            try
+            {
+                var v = File.ReadAllText(Path.Combine(AppPaths.ComfyRoot, "python_embeded", "Lib", "site-packages", "torch", "version.py"));
+                var ver = System.Text.RegularExpressions.Regex.Match(v, @"__version__\s*=\s*'([^']*)'").Groups[1].Value;
+                if (ver.Contains("+cu1") && !ver.Contains("+cu12") && !ver.Contains("+cu11")) return "nvidia";
+                if (ver.Contains("+cu")) return "nvidia_cu126";
+                if (ver.Contains("rocm") || System.Text.RegularExpressions.Regex.IsMatch(v, @"hip\s*[:=][^\n]*'\d")) return "amd";
+                if (ver.Contains("xpu")) return "intel";
+                if (ver.Contains("+cpu")) return "cpu";
+            }
+            catch { }
+            return null;
+        }
+    }
+
+    /// <summary>Whether the installed PyTorch can drive the selected package's GPU. A newer card on a CUDA 12 build is
+    /// fine; a card older than sm_75 on the CUDA 13 build or a different vendor is not.</summary>
+    static bool PackageFits(out string have)
+    {
+        have = InstalledPackage ?? "?";
+        var want = Gpu.Package;
+        if (InstalledPackage is null || want == "cpu" || have == want) return true;
+        if (want.StartsWith("nvidia") && have.StartsWith("nvidia")) return !(have == "nvidia" && Gpu.Info.ComputeCap is < 7.5);
+        return false;
+    }
+
+    static string GpuTestKey => $"{AppPaths.ComfyRoot}|{Gpu.Package}";
+
+    // ---- GPU self-test ---------------------------------------------------------------------------
+
+    const string GpuTestScript = """
+        import sys, torch
+        want = sys.argv[1]
+        if want == "cpu":
+            dev = "cpu"
+        elif hasattr(torch, "xpu") and torch.xpu.is_available():
+            dev = "xpu"
+        elif torch.cuda.is_available():
+            dev = "cuda"
+        else:
+            print("NO_GPU torch", torch.__version__, "cuda", torch.version.cuda, "hip", getattr(torch.version, "hip", None))
+            sys.exit(3)
+        x = torch.randn(512, 512, device=dev, dtype=torch.float16 if dev != "cpu" else torch.float32)
+        v = (x @ x).float().sum().item()
+        name = {"cuda": lambda: torch.cuda.get_device_name(0), "xpu": lambda: torch.xpu.get_device_name(0)}.get(dev, lambda: "CPU")()
+        print("OK", dev, name, "torch", torch.__version__)
+        """;
+
+    static async Task GpuSelfTest(SetupStep? step, CancellationToken ct)
+    {
+        step?.Report(L.Z("加载 PyTorch 并在显卡上运算…", "Loading PyTorch and computing on the GPU…"));
+        var script = Path.Combine(AppPaths.Data, "gpu_test.py");
+        Directory.CreateDirectory(AppPaths.Data);
+        await File.WriteAllTextAsync(script, GpuTestScript, ct);
+        var (code, output) = await Run(AppPaths.Python, ["-s", script, Gpu.Package], AppPaths.ComfyRoot, null, ct);
+        var ok = output.Split('\n').FirstOrDefault(l => l.StartsWith("OK "));
+        if (code == 0 && ok != null)
+        {
+            AppPaths.SaveSettings(s => s["gpu_test_ok"] = GpuTestKey);
+            step?.Report(ok[3..].Trim(), 100);
+            return;
+        }
+        throw new Exception(GpuTestHint(output) + "\n" + Tail(output.Trim(), 300));
+    }
+
+    static string GpuTestHint(string output)
+    {
+        var o = output.ToLowerInvariant();
+        var pkg = Gpu.Package;
+        if (o.Contains("no kernel image") || o.Contains("not compatible with the current pytorch") || o.Contains("invalid device function")
+            || o.Contains("hipErrorNoBinaryForGpu".ToLowerInvariant()))
+            return pkg == "nvidia"
+                ? L.Z("这张显卡太旧，CUDA 13 运行包不支持：请在上方把运行包改为“NVIDIA 旧卡”，再安装运行环境。",
+                      "This card is too old for the CUDA 13 package: set the package above to \"NVIDIA legacy\" and install the runtime again.")
+                : L.Z("PyTorch 不支持这张显卡的架构（AMD 需 RX 6000 及更新，Intel 需 Arc）。可改用“仅 CPU”运行包（很慢）。",
+                      "PyTorch does not support this card's architecture (AMD needs RX 6000 or newer, Intel needs Arc). The CPU package works, slowly.");
+        if (o.Contains("driver") && (o.Contains("insufficient") || o.Contains("too old") || o.Contains("older than")))
+            return L.Z("显卡驱动过旧：请安装最新的显卡驱动后点“重新检查”。", "The graphics driver is too old: install the latest driver, then click Re-check.");
+        if (o.Contains("out of memory"))
+            return L.Z("显存已被其他程序占满：关闭游戏或其他 AI 程序后重试。", "VRAM is full: close games or other AI apps and retry.");
+        if (o.Contains("no_gpu"))
+            return pkg switch
+            {
+                "amd" => L.Z("PyTorch 找不到 AMD 显卡：需要 Windows 11、RX 6000 或更新的显卡，以及最新的 AMD Adrenalin 驱动。",
+                             "PyTorch cannot see the AMD GPU: it needs Windows 11, an RX 6000 or newer card and the latest AMD Adrenalin driver."),
+                "intel" => L.Z("PyTorch 找不到 Intel Arc 显卡：请安装最新的 Intel Arc 驱动。", "PyTorch cannot see the Intel Arc GPU: install the latest Intel Arc driver."),
+                _ => L.Z("PyTorch 找不到 NVIDIA 显卡：请安装/更新 NVIDIA 驱动，并确认运行包与显卡品牌一致。",
+                         "PyTorch cannot see an NVIDIA GPU: install or update the NVIDIA driver and make sure the package matches your GPU brand."),
+            };
+        return L.Z("显卡自检失败，请检查驱动与运行包是否匹配：", "The GPU self-test failed; check that the driver and package match:");
     }
 
     // ---- installers ----------------------------------------------------------------------------
 
+    const string ComfyReleases = "https://github.com/Comfy-Org/ComfyUI/releases/latest/download/";
+
     static async Task InstallRuntime(SetupStep step, CancellationToken ct)
     {
-        if (File.Exists(AppPaths.Python) && File.Exists(Path.Combine(AppPaths.ComfyDir, "main.py")))
+        var package = Gpu.Package;
+        if (File.Exists(AppPaths.Python) && File.Exists(Path.Combine(AppPaths.ComfyDir, "main.py")) && PackageFits(out _))
         {
-            // present but outdated: run the portable package's own updater
+            // present but outdated: run the portable package's own updater (needs GitHub)
             step.Report(L.Z("更新 ComfyUI…", "Updating ComfyUI…"));
             var updateDir = Path.Combine(AppPaths.ComfyRoot, "update");
             var (code, output) = await Run(AppPaths.Python, ["-s", "update.py", AppPaths.ComfyDir + Path.DirectorySeparatorChar], updateDir,
                 line => step.Report(line), ct);
-            if (code != 0) throw new Exception(L.Z("ComfyUI 更新失败：", "ComfyUI update failed: ") + Tail(output));
+            if (code != 0)
+                throw new Exception(L.Z("ComfyUI 更新失败（需要能访问 GitHub），也可以删除旧的 ComfyUI 文件夹后重新安装：",
+                                        "ComfyUI update failed (needs GitHub access); you can also delete the old ComfyUI folder and install again: ") + Tail(output));
             return;
         }
 
         var root = AppPaths.Root;
-        var archive = Path.Combine(root, "ComfyUI_windows_portable_nvidia.7z");
+        var name = Gpu.ArchiveName(package);
+        var archive = Path.Combine(root, name);
         if (!File.Exists(archive))
-        {
-            step.Report(L.Z("查询 ComfyUI 最新版本…", "Looking up the latest ComfyUI release…"));
-            var rel = JsonNode.Parse(await Http.GetStringAsync("https://api.github.com/repos/comfyanonymous/ComfyUI/releases/latest", ct))!;
-            var asset = rel["assets"]!.AsArray().FirstOrDefault(a => a!["name"]!.GetValue<string>() == "ComfyUI_windows_portable_nvidia.7z")
-                        ?? throw new Exception("ComfyUI_windows_portable_nvidia.7z not found in the latest release");
-            await DownloadFile(asset["browser_download_url"]!.GetValue<string>(), archive, asset["size"]!.GetValue<long>(), null, step, ct);
-        }
+            await DownloadAny(GithubUrls(ComfyReleases + name), archive, -1, null, step, ct);
 
         var sevenZip = Path.Combine(AppPaths.Tools, "7zr.exe");
         if (!File.Exists(sevenZip))
         {
-            Directory.CreateDirectory(AppPaths.Tools);
             step.Report(L.Z("下载 7-Zip 解压工具…", "Downloading 7-Zip…"));
-            await File.WriteAllBytesAsync(sevenZip, await Http.GetByteArrayAsync("https://www.7-zip.org/a/7zr.exe", ct), ct);
+            await DownloadAny(["https://www.7-zip.org/a/7zr.exe", .. GithubUrls("https://github.com/ip7z/7zip/releases/latest/download/7zr.exe")],
+                sevenZip, -1, null, step, ct);
         }
 
+        // extract into a scratch folder first: packages differ in their top folder name, and a different
+        // package must not be unpacked over an existing ComfyUI
+        var tmp = Path.Combine(root, "_comfy_extract");
+        if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
         step.Report(L.Z("解压中（约 1-3 分钟）…", "Extracting (1-3 minutes)…"), 0);
-        var (xcode, xout) = await Run(sevenZip, ["x", archive, "-o" + root, "-y", "-bsp1"], root, line =>
+        var (xcode, xout) = await Run(sevenZip, ["x", archive, "-o" + tmp, "-y", "-bsp1"], root, line =>
         {
             var pct = line.Trim().Split('%')[0];
             if (int.TryParse(pct, out var p)) step.Report(L.Z("解压中… ", "Extracting… ") + p + "%", p);
         }, ct);
-        if (xcode != 0) throw new Exception(L.Z("解压失败：", "Extraction failed: ") + Tail(xout));
-        AppPaths.ComfyRoot = Path.Combine(root, "ComfyUI_windows_portable");
+        if (xcode != 0)
+        {
+            File.Delete(archive);   // most likely a damaged download; fetch it again next time
+            throw new Exception(L.Z("解压失败（压缩包已删除，请重新安装）：", "Extraction failed (the archive was deleted; install again): ") + Tail(xout));
+        }
+        var extracted = Directory.GetDirectories(tmp).FirstOrDefault(d => File.Exists(Path.Combine(d, "python_embeded", "python.exe")))
+                        ?? throw new Exception(L.Z("压缩包里没有 ComfyUI 便携版", "The archive holds no ComfyUI portable folder"));
+        var target = Path.Combine(root, "ComfyUI_windows_portable");
+        if (Directory.Exists(target)) target += "_" + package;
+        if (Directory.Exists(target)) Directory.Delete(target, true);
+        Directory.Move(extracted, target);
+        Directory.Delete(tmp, true);
+        File.Delete(archive);
+
+        AppPaths.ComfyRoot = target;
         if (!RuntimeOk(out var problem)) throw new Exception(problem);
     }
 
@@ -292,14 +457,16 @@ public static class Setup
         var target = Path.Combine(customNodes, "ComfyUI-GGUF");
         if (!File.Exists(Path.Combine(target, "nodes.py")))
         {
-            step.Report(L.Z("下载 ComfyUI-GGUF…", "Downloading ComfyUI-GGUF…"));
-            var zip = await Http.GetByteArrayAsync("https://github.com/city96/ComfyUI-GGUF/archive/refs/heads/main.zip", ct);
+            var zip = Path.Combine(AppPaths.Data, "ComfyUI-GGUF.zip");
+            if (File.Exists(zip)) File.Delete(zip);
+            await DownloadAny(GithubUrls("https://github.com/city96/ComfyUI-GGUF/archive/refs/heads/main.zip"), zip, -1, null, step, ct);
             var tmp = Path.Combine(AppPaths.Data, "gguf_tmp");
             if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
-            ZipFile.ExtractToDirectory(new MemoryStream(zip), tmp);
+            ZipFile.ExtractToDirectory(zip, tmp);
             if (Directory.Exists(target)) Directory.Delete(target, true);
             Directory.Move(Directory.GetDirectories(tmp).Single(), target);
             Directory.Delete(tmp, true);
+            File.Delete(zip);
         }
         step.Report(L.Z("pip 安装 gguf…", "pip installing gguf…"));
         await Pip(step, ct, "gguf>=0.13.0");
@@ -318,57 +485,112 @@ public static class Setup
         await Download(Lora, step, ct);
     }
 
+    /// <summary>pip install, trying PyPI and its mirrors in the order that suits the download source.</summary>
     static async Task Pip(SetupStep step, CancellationToken ct, params string[] packages)
     {
-        var args = new List<string> { "-s", "-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location" };
-        args.AddRange(packages);
-        var (code, output) = await Run(AppPaths.Python, args, AppPaths.ComfyRoot, line => step.Report(line), ct);
-        if (code != 0) throw new Exception("pip: " + Tail(output));
+        var errors = new List<string>();
+        foreach (var index in PipOrder())
+        {
+            var args = new List<string> { "-s", "-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location", "--timeout", "30" };
+            if (index != null) args.AddRange(["-i", index, "--trusted-host", new Uri(index).Host]);
+            args.AddRange(packages);
+            var (code, output) = await Run(AppPaths.Python, args, AppPaths.ComfyRoot, line => step.Report(line), ct);
+            if (code == 0) return;
+            errors.Add($"[{index ?? "pypi.org"}] {Tail(output, 200)}");
+            step.Report(L.Z("换一个 PyPI 源重试…", "Retrying with another PyPI index…"));
+        }
+        throw new Exception("pip: " + string.Join("\n", errors));
     }
 
     // ---- downloads -----------------------------------------------------------------------------
 
     public static Task Download(ModelFile f, SetupStep step, CancellationToken ct) =>
-        DownloadFile(f.Url(HfEndpoint), f.Target, f.Size, f.Sha256, step, ct);
+        DownloadAny(f.Urls(), f.Target, f.Size, f.Sha256, step, ct);
 
-    /// <summary>Resumable download to "&lt;dst&gt;.part", SHA-256 verified, then renamed into place.</summary>
+    /// <summary>Tries each source in turn. Sources serve identical bytes, so a partial download resumes on the next one.</summary>
+    public static async Task DownloadAny(IEnumerable<string> urls, string dst, long size, string? sha256, SetupStep step, CancellationToken ct)
+    {
+        var errors = new List<string>();
+        foreach (var url in urls)
+        {
+            try
+            {
+                await DownloadFile(url, dst, size, sha256, step, ct);
+                return;
+            }
+            catch (Exception e) when (!ct.IsCancellationRequested)
+            {
+                errors.Add($"{new Uri(url).Host}: {e.Message}");
+                step.Report(L.Z($"{new Uri(url).Host} 不可用，切换下一个下载源…", $"{new Uri(url).Host} failed, trying the next source…"));
+            }
+        }
+        throw new Exception(L.Z("所有下载源都失败了。可在上方切换下载源 / 填写 GitHub 代理，或“复制下载链接”手动下载：\n",
+                                "Every download source failed. Switch the download source / set a GitHub proxy above, or use Copy download links:\n")
+                            + string.Join("\n", errors));
+    }
+
+    static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>Resumable download to "&lt;dst&gt;.part", SHA-256 verified, then renamed into place.
+    /// size &lt;= 0 means unknown: the size is taken from the response. Gives up after 30 s without data.</summary>
     public static async Task DownloadFile(string url, string dst, long size, string? sha256, SetupStep step, CancellationToken ct)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
         var part = dst + ".part";
         long have = File.Exists(part) ? new FileInfo(part).Length : 0;
-        if (have > size) { File.Delete(part); have = 0; }
+        if (size > 0 && have > size) { File.Delete(part); have = 0; }
 
-        if (have < size)
+        if (size <= 0 || have < size)
         {
-            var req = new HttpRequestMessage(HttpMethod.Get, url);
-            if (have > 0) req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(have, null);
-            using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
-            resp.EnsureSuccessStatusCode();
-            if (have > 0 && resp.StatusCode != System.Net.HttpStatusCode.PartialContent) have = 0; // server ignored Range
-
-            await using var src = await resp.Content.ReadAsStreamAsync(ct);
-            await using var fs = new FileStream(part, have > 0 ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
-            var buf = new byte[1 << 20];
-            long done = have, lastBytes = have;
-            var clock = Stopwatch.StartNew();
-            var lastReport = TimeSpan.Zero;
-            int n;
-            while ((n = await src.ReadAsync(buf, ct)) > 0)
+            using var stall = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            stall.CancelAfter(StallTimeout);
+            try
             {
-                await fs.WriteAsync(buf.AsMemory(0, n), ct);
-                done += n;
-                if (clock.Elapsed - lastReport > TimeSpan.FromMilliseconds(300))
+                var req = new HttpRequestMessage(HttpMethod.Get, url);
+                if (have > 0) req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(have, null);
+                using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, stall.Token);
+                if (resp.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable && size <= 0)
+                    size = have;    // the .part file is already complete
+                else
                 {
-                    var speed = (done - lastBytes) / (clock.Elapsed - lastReport).TotalSeconds;
-                    lastReport = clock.Elapsed;
-                    lastBytes = done;
-                    step.Report($"{Path.GetFileName(dst)}  {done / 1e9:0.00} / {size / 1e9:0.00} GB  ·  {speed / 1e6:0.0} MB/s", 100.0 * done / size);
+                    resp.EnsureSuccessStatusCode();
+                    if (have > 0 && resp.StatusCode != System.Net.HttpStatusCode.PartialContent) have = 0; // server ignored Range
+                    if (size <= 0)
+                        size = resp.Content.Headers.ContentRange?.Length ?? (resp.Content.Headers.ContentLength is long len ? have + len : -1);
+
+                    await using var src = await resp.Content.ReadAsStreamAsync(stall.Token);
+                    await using var fs = new FileStream(part, have > 0 ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20);
+                    var buf = new byte[1 << 20];
+                    long done = have, lastBytes = have;
+                    var clock = Stopwatch.StartNew();
+                    var lastReport = TimeSpan.Zero;
+                    int n;
+                    while (true)
+                    {
+                        stall.CancelAfter(StallTimeout);
+                        if ((n = await src.ReadAsync(buf, stall.Token)) <= 0) break;
+                        await fs.WriteAsync(buf.AsMemory(0, n), ct);
+                        done += n;
+                        if (clock.Elapsed - lastReport > TimeSpan.FromMilliseconds(300))
+                        {
+                            var speed = (done - lastBytes) / (clock.Elapsed - lastReport).TotalSeconds;
+                            lastReport = clock.Elapsed;
+                            lastBytes = done;
+                            var total = size > 0 ? $" / {size / 1e9:0.00}" : "";
+                            step.Report($"{Path.GetFileName(dst)}  {done / 1e9:0.00}{total} GB  ·  {speed / 1e6:0.0} MB/s  ·  {new Uri(url).Host}",
+                                size > 0 ? 100.0 * done / size : -1);
+                        }
+                    }
+                    if (size <= 0) size = done;
                 }
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new TimeoutException(L.Z("30 秒没有收到数据", "no data for 30 seconds"));
             }
         }
 
-        if (new FileInfo(part).Length != size)
+        if (!File.Exists(part) || new FileInfo(part).Length != size)
             throw new Exception(L.Z("下载不完整，请重试（会断点续传）", "Download incomplete; retry to resume"));
         if (sha256 != null)
         {
@@ -390,8 +612,13 @@ public static class Setup
     public static string ManualLinks()
     {
         var sb = new StringBuilder();
+        var name = Gpu.ArchiveName(Gpu.Package);
+        sb.AppendLine(ComfyReleases + name).AppendLine(L.Z("    -> 用 7-Zip 解压，然后点“选择已有 ComfyUI…”", "    -> extract with 7-Zip, then use \"Use existing ComfyUI…\""));
         foreach (var f in new[] { CurrentQuant, TextEncoder, Vae, Lora })
-            sb.AppendLine(f.Url(HfEndpoint)).AppendLine("    -> " + f.Target);
+        {
+            foreach (var u in f.Urls()) sb.AppendLine(u);
+            sb.AppendLine("    -> " + f.Target);
+        }
         return sb.ToString();
     }
 
@@ -427,5 +654,5 @@ public static class Setup
         return (p.ExitCode, output.ToString());
     }
 
-    static string Tail(string s) => s.Length > 600 ? s[^600..] : s;
+    static string Tail(string s, int n = 600) => s.Length > n ? s[^n..] : s;
 }

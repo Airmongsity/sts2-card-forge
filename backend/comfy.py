@@ -50,11 +50,12 @@ def total_ram_mib():
     return m.total // (1024 * 1024)
 
 
-def resolve_profile(name):
+def resolve_profile(name, s=None):
     if name in PROFILE_FLAGS:
         return name
     info = gpu_info()
-    vram = info[1] if info else 0
+    # AMD / Intel have no nvidia-smi: the app stores the VRAM it read from the display adapter
+    vram = info[1] if info else int((s or config.load()).get("gpu_vram_mib") or 0)
     if vram and vram < 5500:
         return "minimal"
     if vram < 7000 or total_ram_mib() < 14000:
@@ -108,8 +109,12 @@ class Comfy:
                 return
             args = [str(py), "-s", str(cdir / "main.py"), "--windows-standalone-build", "--disable-auto-launch",
                     "--port", str(s["comfy_port"])]
-            self.profile = resolve_profile(s.get("comfy_profile", "auto"))
-            args += PROFILE_FLAGS[self.profile]
+            if s.get("gpu_package") == "cpu":
+                self.profile = "cpu"
+                args += ["--cpu"]
+            else:
+                self.profile = resolve_profile(s.get("comfy_profile", "auto"), s)
+                args += PROFILE_FLAGS[self.profile]
             if s.get("comfy_preview", "latent2rgb") != "none":
                 args += ["--preview-method", s["comfy_preview"]]
             args += shlex.split(s.get("comfy_extra_args") or "", posix=False)

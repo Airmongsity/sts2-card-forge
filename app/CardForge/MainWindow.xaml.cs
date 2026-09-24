@@ -52,7 +52,8 @@ public sealed partial class MainWindow : Window
     {
         BackendText.Text = L.Z("后端启动中…", "Starting backend…");
         AppPaths.DetectComfyRoot();
-        await Setup.DetectGpu();
+        await Gpu.Detect();
+        Gpu.Publish();
         var steps = Setup.CreateSteps();
         bool allOk = true;
         foreach (var s in steps.Where(s => !s.Optional)) allOk &= await s.Check();

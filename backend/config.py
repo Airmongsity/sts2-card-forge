@@ -22,7 +22,10 @@ DEFAULTS = {
     "comfy_preview": "latent2rgb",         # none | latent2rgb | auto. latent2rgb measured free on an 8 GB card;
                                            # auto overflowed VRAM there and ran >15x slower
     "backend_port": 8190,
-    "hf_endpoint": "https://huggingface.co",
+    "download_source": "auto",            # auto | global (HuggingFace, GitHub, PyPI) | china (ModelScope, PyPI mirror)
+    "github_proxy": "",                    # optional prefix for GitHub downloads, e.g. https://ghfast.top/
+    "gpu_package": "",                     # ComfyUI package chosen in Setup: nvidia | nvidia_cu126 | amd | intel | cpu
+    "gpu_vram_mib": 0,                     # VRAM read by the app (used when nvidia-smi is unavailable)
     "unet_file": "qwen_image_2.1_Q5_K_M.gguf",   # picked by VRAM during setup
     "ui_language": "",                            # "" = follow Windows
     "llm_provider": "anthropic",           # anthropic | openai (any OpenAI-compatible API) | template

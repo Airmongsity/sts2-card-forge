@@ -22,10 +22,43 @@ public sealed partial class SetupPage : Page
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         _loading = true;
-        GpuText.Text = Setup.VramMiB is int mib
-            ? $"{Setup.GpuName} · {mib / 1024.0:0.#} GB VRAM" + (mib < 7000 ? L.Z("（显存偏小，出图会更慢）", " (low VRAM: generation will be slower)") : "")
-            : L.Z("未检测到 NVIDIA 显卡（nvidia-smi 不可用）。本工具需要 NVIDIA 显卡。", "No NVIDIA GPU detected (nvidia-smi unavailable). An NVIDIA GPU is required.");
+        GpuText.Text = Gpu.Summary();
 
+        PackageBox.Items.Clear();
+        var auto = Gpu.AutoPackage;
+        var overridden = AppPaths.LoadSettings()["gpu_package_override"]?.GetValue<string>();
+        PackageBox.Items.Add(new ComboBoxItem { Tag = "", Content = L.Z("自动：", "Auto: ") + Gpu.PackageLabel(auto) });
+        foreach (var p in Gpu.Packages)
+            PackageBox.Items.Add(new ComboBoxItem { Tag = p, Content = Gpu.PackageLabel(p) });
+        PackageBox.SelectedItem = PackageBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == overridden) ?? PackageBox.Items[0];
+        ShowWarnings();
+
+        SourceBox.Items.Clear();
+        foreach (var (id, label) in new[]
+                 {
+                     ("auto", L.Z("自动（按系统地区）", "Auto (by system region)")),
+                     ("global", L.Z("国际：HuggingFace / GitHub / PyPI 优先", "Global: HuggingFace / GitHub / PyPI first")),
+                     ("china", L.Z("中国大陆：ModelScope 魔搭 / 清华 PyPI 镜像优先", "Mainland China: ModelScope / Tsinghua PyPI mirror first")),
+                 })
+            SourceBox.Items.Add(new ComboBoxItem { Tag = id, Content = label });
+        SourceBox.SelectedItem = SourceBox.Items.OfType<ComboBoxItem>().First(i => (string)i.Tag == Setup.Source);
+        GithubProxyBox.Text = Setup.GithubProxy;
+
+        FillQuants();
+        ComfyPath.Text = AppPaths.ComfyRoot;
+        _loading = false;
+        await CheckAll();
+    }
+
+    void ShowWarnings()
+    {
+        var w = Gpu.Warnings(Gpu.Package);
+        GpuWarn.Message = string.Join("\n", w);
+        GpuWarn.IsOpen = w.Count > 0;
+    }
+
+    void FillQuants()
+    {
         QuantBox.Items.Clear();
         var rec = Setup.RecommendedQuant;
         foreach (var (_, f) in Setup.Quants)
@@ -37,10 +70,6 @@ public sealed partial class SetupPage : Page
             });
         var current = Setup.CurrentQuant;
         QuantBox.SelectedItem = QuantBox.Items.OfType<ComboBoxItem>().First(i => current.Equals(i.Tag));
-        MirrorBox.SelectedItem = MirrorBox.Items.OfType<string>().FirstOrDefault(m => m == Setup.HfEndpoint) ?? MirrorBox.Items[0];
-        ComfyPath.Text = AppPaths.ComfyRoot;
-        _loading = false;
-        await CheckAll();
     }
 
     async Task CheckAll()
@@ -131,10 +160,37 @@ public sealed partial class SetupPage : Page
         await CheckAll();
     }
 
-    void MirrorBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    async void PackageBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_loading || MirrorBox.SelectedItem is not string m) return;
-        AppPaths.SaveSettings(s => s["hf_endpoint"] = m);
+        if (_loading || PackageBox.SelectedItem is not ComboBoxItem { Tag: string p }) return;
+        AppPaths.SaveSettings(s =>
+        {
+            if (p.Length == 0) s.Remove("gpu_package_override");
+            else s["gpu_package_override"] = p;
+        });
+        Gpu.Publish();
+        ShowWarnings();
+        _loading = true;
+        FillQuants();
+        _loading = false;
+        await CheckAll();
+    }
+
+    void SourceBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || SourceBox.SelectedItem is not ComboBoxItem { Tag: string id }) return;
+        AppPaths.SaveSettings(s => s["download_source"] = id);
+    }
+
+    void GithubProxyBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        var v = GithubProxyBox.Text.Trim();
+        if (v.Length > 0 && !Uri.TryCreate(v, UriKind.Absolute, out _))
+        {
+            App.Main.ShowError(L.Z("GitHub 代理应是完整网址，如 https://ghfast.top/", "The GitHub proxy must be a full URL, e.g. https://ghfast.top/"));
+            return;
+        }
+        AppPaths.SaveSettings(s => s["github_proxy"] = v);
     }
 
     async void PickComfy_Click(object sender, RoutedEventArgs e)
