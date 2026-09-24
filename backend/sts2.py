@@ -88,7 +88,7 @@ def color_words(hex_color):
     if rgb is None:
         return "deep teal"
     hue, light, sat = colorsys.rgb_to_hls(*rgb)
-    if sat < 0.15 or light < 0.06:
+    if sat < 0.15 or light < 0.12:          # near-black reads as black whatever its tint
         return "charcoal black" if light < 0.2 else "slate gray" if light < 0.55 else "pale silver"
     name = next(n for limit, n in _HUES if hue * 360 <= limit)
     adj = ("deep" if light < 0.24 else "dark" if light < 0.34 else "vivid" if light < 0.62
@@ -98,27 +98,32 @@ def color_words(hex_color):
     return f"{adj} {name}"
 
 
-def theme_palette(hex_color):
-    """The theme colour plus a darker analogous hue: a two-tone background like the game's own cards."""
+def theme_palette(colors):
+    """One theme colour -> it plus a darker analogous hue (a two-tone background like the game's own cards).
+    Several colours (the first dominant, the rest accents) -> their names in order."""
     import colorsys
-    rgb = _rgb(hex_color)
-    if rgb is None:
+    colors = [c for c in ([colors] if isinstance(colors, str) else colors or []) if _rgb(c)]
+    if not colors:
         return NEUTRAL_PALETTE
-    hue, light, sat = colorsys.rgb_to_hls(*rgb)
+    if len(colors) > 1:
+        words = list(dict.fromkeys(color_words(c) for c in colors))
+        return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+    hue, light, sat = colorsys.rgb_to_hls(*_rgb(colors[0]))
     second = colorsys.hls_to_rgb((hue + 0.09) % 1, max(0.14, light * 0.55), sat)
     second_hex = "#" + "".join(f"{round(c * 255):02x}" for c in second)
-    first, other = color_words(hex_color), color_words(second_hex)
+    first, other = color_words(colors[0]), color_words(second_hex)
     if other == first:
         other = "charcoal black"
     return f"{first} and {other}"
 
 
-def card_theme(card):
-    """A card's colour theme: its own "theme_color" param, else its character's colour."""
+def card_themes(card):
+    """A card's theme colours: its own "theme_colors" (or older single "theme_color") param, else its character's colour."""
     params = (card or {}).get("params") or {}
-    if _rgb(params.get("theme_color")):
-        return params["theme_color"]
-    return class_info((card or {}).get("cls") or "")["color"]
+    colors = [c for c in (params.get("theme_colors") or []) if _rgb(c)]
+    if not colors and _rgb(params.get("theme_color")):
+        colors = [params["theme_color"]]
+    return colors or [class_info((card or {}).get("cls") or "")["color"]]
 
 
 def card_refs(card):

@@ -47,9 +47,13 @@ public sealed partial class GalleryPage : Page
         try
         {
             var list = await Api.Get<List<ImageRec>>(q);
+            var keep = Selected?.Id;
             _items.Clear();
             foreach (var i in list) _items.Add(i);
             CountText.Text = L.Z($"{list.Count} 张", $"{list.Count} images");
+            // never leave the detail column empty: keep the selection, else show the newest image
+            Grid.SelectedItem = _items.FirstOrDefault(i => i.Id == keep) ?? _items.FirstOrDefault();
+            ShowDetail();
         }
         catch (Exception ex) { App.Main.ShowError(ex.Message); }
     }
@@ -58,10 +62,13 @@ public sealed partial class GalleryPage : Page
     async void Filter_Click(object sender, RoutedEventArgs e) => await Load();
     async void Refresh_Click(object sender, RoutedEventArgs e) => await Load();
 
-    void Grid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    void Grid_SelectionChanged(object sender, SelectionChangedEventArgs e) => ShowDetail();
+
+    void ShowDetail()
     {
         var img = Selected;
         Detail.Visibility = img == null ? Visibility.Collapsed : Visibility.Visible;
+        DetailColumn.Width = img == null ? new GridLength(0) : new GridLength(440);
         if (img == null) return;
         Big.Source = img.Full;
         DetailTitle.Text = img.CardName ?? L.Z("(无卡牌)", "(no card)");
@@ -108,8 +115,11 @@ public sealed partial class GalleryPage : Page
         if (Selected is not { } img) return;
         try
         {
+            var index = _items.IndexOf(img);
             await Api.Delete($"/api/images/{img.Id}");
             _items.Remove(img);
+            Grid.SelectedItem = _items.Count == 0 ? null : _items[Math.Min(index, _items.Count - 1)];
+            ShowDetail();
         }
         catch (Exception ex) { App.Main.ShowError(ex.Message); }
     }

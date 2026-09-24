@@ -75,9 +75,13 @@ def _card_brief(card):
         brief += f"\n\nThe card belongs to the mod character \"{info['name']}\". Appearance:\n{info['appearance']}"
     if info["palette"] and info["palette"] != sts2.NEUTRAL_PALETTE:
         brief += f"\nThe character's own colours (for their outfit only): {info['palette']}"
-    theme = sts2.card_theme(card)
-    brief += (f"\nColour theme of this card: {sts2.theme_palette(theme)} ({theme}). Build the light, the effects and "
-              "the background sentence around this theme, even when it differs from the character's own colours.")
+    themes = sts2.card_themes(card)
+    brief += f"\nColour theme of this card: {sts2.theme_palette(themes)} ({', '.join(themes)})."
+    if len(themes) > 1:
+        brief += (" The first colour dominates the picture (mostly the background and shadows); the others are accent "
+                  "colours for the glowing objects, the light and the effects.")
+    brief += (" Build the light, the effects and the background sentence around this theme, even when it differs from "
+              "the character's own colours.")
     if sts2.card_refs(card):
         brief += ("\nA reference image of the character is attached as <image1>. When the character appears, write "
                   "\"the character from <image1>\" (same face, hair and outfit) instead of re-describing them.")
@@ -172,7 +176,7 @@ def template_prompt(card, settings=None):
         concept = f"the character from <image1>, {concept}"
     template = (settings or {}).get("prompt_template") or sts2.DEFAULT_PROMPT_TEMPLATE
     values = _Keep(trigger=info["trigger"], concept=concept[0].upper() + concept[1:], name=card.get("name") or "",
-                   effect=card.get("description") or "", palette=sts2.theme_palette(sts2.card_theme(card)).capitalize(),
+                   effect=card.get("description") or "", palette=sts2.theme_palette(sts2.card_themes(card)).capitalize(),
                    character=info["appearance"] or info["name"])
     return " ".join(template.format_map(values).split())
 

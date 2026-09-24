@@ -65,9 +65,17 @@
         <StackPanel Spacing="10">
             <c:ThermalScene x:Name="Scene" Height="400" />
             <Border Style="{StaticResource Panel}" Padding="0" Height="300">
-                <Grid>
+                <Grid Background="Transparent" PointerEntered="Preview_PointerEntered" PointerExited="Preview_PointerExited">
                     <Image x:Name="Preview" Stretch="Uniform" />
                     <TextBlock x:Name="PreviewHint" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource Hint}" TextAlignment="Center" Margin="20" />
+                    <Button x:Name="AbortOverlay" Visibility="Collapsed" Click="Abort_Click" Style="{StaticResource AccentButtonStyle}"
+                            HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10"
+                            ToolTipService.ToolTip="{x:Bind s:L.Z('中止正在绘制的这张图（队列中的其余图片照常生成）','Stop the image being drawn (the rest of the queue carries on)')}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <SymbolIcon Symbol="Stop" />
+                            <TextBlock Text="{x:Bind s:L.Z('中止此张','Stop this image')}" />
+                        </StackPanel>
+                    </Button>
                 </Grid>
             </Border>
             <TextBlock x:Name="WorkerInfo" Style="{StaticResource Hint}" />

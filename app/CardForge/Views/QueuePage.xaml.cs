@@ -2,6 +2,7 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using CardForge.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Navigation;
 using Windows.Storage.Streams;
@@ -59,6 +60,9 @@ public sealed partial class QueuePage : Page
 
         try { Scene.Update(await Api.Get<ThermalInfo>("/api/thermal")); } catch { }
 
+        _runningJob = w.Current;
+        UpdateAbortOverlay();
+
         var bytes = w.Current != null ? await Api.GetBytes("/api/preview") : null;
         if (bytes != null)
         {
@@ -97,6 +101,24 @@ public sealed partial class QueuePage : Page
     async void StartComfy_Click(object sender, RoutedEventArgs e) => await Try(() => Api.Post("/api/comfy/start"));
     async void StopComfy_Click(object sender, RoutedEventArgs e) => await Try(() => Api.Post("/api/comfy/stop"));
     async void Log_Click(object sender, RoutedEventArgs e) => await LoadLog();
+
+    // hovering the preview offers to stop the image being drawn
+    int? _runningJob;
+    bool _pointerOnPreview;
+
+    void Preview_PointerEntered(object sender, PointerRoutedEventArgs e) { _pointerOnPreview = true; UpdateAbortOverlay(); }
+    void Preview_PointerExited(object sender, PointerRoutedEventArgs e) { _pointerOnPreview = false; UpdateAbortOverlay(); }
+
+    void UpdateAbortOverlay() =>
+        AbortOverlay.Visibility = _pointerOnPreview && _runningJob != null ? Visibility.Visible : Visibility.Collapsed;
+
+    async void Abort_Click(object sender, RoutedEventArgs e)
+    {
+        if (_runningJob is not int id) return;
+        _runningJob = null;
+        UpdateAbortOverlay();
+        await Try(() => Api.Delete($"/api/jobs/{id}"));
+    }
 
     async void CancelJob_Click(object sender, RoutedEventArgs e) =>
         await Try(() => Api.Delete($"/api/jobs/{(int)((Button)sender).Tag}"));

@@ -4,6 +4,7 @@ using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text.Json.Nodes;
 using CardForge.Services;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -159,6 +160,10 @@ public sealed partial class CardsPage : Page
         ArtImage.Source = null;
         ArtHint.Visibility = Visibility.Visible;
         PromptNotes.Text = SavedText.Text = CardJobText.Text = "";
+        _runningJob = null;
+        AbortBtn.Visibility = Visibility.Collapsed;
+        UpdateAbortOverlay();
+        LivePreview.Visibility = Visibility.Collapsed;
         if (card == null) return;
 
         _loadingEditor = true;
@@ -192,8 +197,10 @@ public sealed partial class CardsPage : Page
         _inheritRef = !card.Params.ContainsKey("refs");
         RefBox.Text = _inheritRef ? CharacterRef(card.Cls) : card.Params["refs"]!.AsArray().FirstOrDefault()?.GetValue<string>() ?? "";
         InitBox.Text = card.Params["init"]?.GetValue<string>() ?? "";
-        _inheritTheme = card.Params["theme_color"] is null;
-        SetTheme(_inheritTheme ? CharacterColor(card.Cls) : card.Params["theme_color"]!.GetValue<string>());
+        var own = (card.Params["theme_colors"] as JsonArray)?.Select(n => n?.ToString() ?? "").Where(IsHex).ToList() ?? [];
+        if (own.Count == 0 && card.Params["theme_color"]?.ToString() is { } one && IsHex(one)) own.Add(one);
+        _inheritTheme = own.Count == 0;
+        SetThemes(_inheritTheme ? [CharacterColor(card.Cls)] : own);
         _loadingEditor = false;
         PromptParts_TextChanged(PromptBox, null!);
     }
@@ -232,7 +239,7 @@ public sealed partial class CardsPage : Page
         Keep("steps", (int)StepsBox.Value);
         Keep("denoise", Math.Round(DenoiseBox.Value, 2));
         Keep("style_suffix", SuffixBox.Text.Trim());
-        if (!_inheritTheme) p["theme_color"] = ThemeColorBox.Text.Trim();
+        if (!_inheritTheme) p["theme_colors"] = new JsonArray(_themes.Where(IsHex).Select(h => (JsonNode)JsonValue.Create(h)).ToArray());
         if (long.TryParse(SeedBox.Text.Trim(), out var seed)) p["seed"] = seed;
         if (!_inheritRef) p["refs"] = RefBox.Text.Length > 0 ? new JsonArray(RefBox.Text) : new JsonArray();
         if (InitBox.Text.Length > 0) p["init"] = InitBox.Text;
@@ -289,60 +296,110 @@ public sealed partial class CardsPage : Page
     {
         UpdatePromptPlaceholder();
         if (_inheritRef && !_loadingEditor) RefBox.Text = CharacterRef(ClassBox.SelectedValue as string);
-        if (_inheritTheme && !_loadingEditor) SetTheme(CharacterColor(ClassBox.SelectedValue as string));
+        if (_inheritTheme && !_loadingEditor) SetThemes([CharacterColor(ClassBox.SelectedValue as string)]);
     }
 
     // ---- theme colour: defaults to the character colour; the card keeps its own once changed ----------------
 
-    bool _inheritTheme = true, _syncingTheme;
+    // Several colours are allowed: the first dominates (background, shadows), the rest are accents (glow, effects).
+
+    bool _inheritTheme = true;
+    readonly List<string> _themes = new();
+    const int MaxThemes = 4;
     static readonly Random Rng = new();
 
     static string CharacterColor(string? cls) =>
         Meta.Info.Classes.FirstOrDefault(c => c.Id == cls)?.Color is { Length: > 0 } c ? c : "#2a8a8a";
 
-    void SetTheme(string hex)
+    static bool IsHex(string s) => System.Text.RegularExpressions.Regex.IsMatch(s, "^#[0-9a-fA-F]{6}$");
+    static string Hex(Windows.UI.Color c) => $"#{c.R:x2}{c.G:x2}{c.B:x2}";
+
+    void SetThemes(IEnumerable<string> hexes)
     {
-        _syncingTheme = true;
-        ThemeColorBox.Text = hex;
-        var color = Meta.ParseColor(hex);
-        ThemeSwatch.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(color);
-        ThemePicker.Color = color;
-        _syncingTheme = false;
+        _themes.Clear();
+        _themes.AddRange(hexes);
+        RebuildThemes();
     }
 
-    void ThemeColorBox_TextChanged(object sender, TextChangedEventArgs e)
+    void RebuildThemes()
     {
-        if (_syncingTheme) return;
-        var color = Meta.ParseColor(ThemeColorBox.Text);
-        ThemeSwatch.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(color);
-        _syncingTheme = true;
-        ThemePicker.Color = color;
-        _syncingTheme = false;
-        if (!_loadingEditor) _inheritTheme = false;
+        ThemeColors.Children.Clear();
+        for (int i = 0; i < _themes.Count; i++) ThemeColors.Children.Add(ThemeChip(i));
+        AddThemeBtn.IsEnabled = _themes.Count < MaxThemes;
     }
 
-    void ThemePicker_ColorChanged(ColorPicker sender, ColorChangedEventArgs args)
+    /// <summary>A swatch button; its flyout holds the colour picker (with hex input) and, when there are several, a remove button.</summary>
+    FrameworkElement ThemeChip(int i)
     {
-        if (_syncingTheme) return;
-        var c = args.NewColor;
-        SetTheme($"#{c.R:x2}{c.G:x2}{c.B:x2}");
-        _inheritTheme = false;
+        string Tip() => (i == 0 ? L.Z("主色 ", "Main colour ") : L.Z("点缀色 ", "Accent colour ")) + _themes[i];
+        var color = Meta.ParseColor(_themes[i]);
+        var swatch = new Border
+        {
+            Width = 44, Height = 22, CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1),
+            BorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(0x40, 0xff, 0xff, 0xff)),
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(color),
+        };
+        var picker = new ColorPicker { IsAlphaEnabled = false, Color = color };
+        var content = new StackPanel { Spacing = 8 };
+        content.Children.Add(picker);
+        var button = new DropDownButton { Content = swatch, Padding = new Thickness(6, 4, 6, 4), Flyout = new Flyout { Content = content } };
+        ToolTipService.SetToolTip(button, Tip());
+        AutomationProperties.SetName(button, Tip());
+        picker.ColorChanged += (_, a) =>
+        {
+            var hex = Hex(a.NewColor);
+            if (i >= _themes.Count || hex == _themes[i]) return;   // programmatic sets echo back here
+            _themes[i] = hex;
+            _inheritTheme = false;
+            swatch.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(a.NewColor);
+            ToolTipService.SetToolTip(button, Tip());
+        };
+        if (_themes.Count > 1)
+        {
+            var remove = new Button { Content = L.Z("移除此颜色", "Remove this colour"), HorizontalAlignment = HorizontalAlignment.Right };
+            remove.Click += (_, _) =>
+            {
+                button.Flyout.Hide();
+                _themes.RemoveAt(i);
+                _inheritTheme = false;
+                RebuildThemes();
+            };
+            content.Children.Add(remove);
+        }
+        return button;
     }
 
     /// <summary>A random vivid colour (any hue, strong saturation, mid brightness) like the game's card backdrops.</summary>
-    void RandomTheme_Click(object sender, RoutedEventArgs e)
+    static string RandomColor(double vMin = 0.5, double vMax = 0.9)
     {
-        double h = Rng.NextDouble() * 6, s = 0.6 + Rng.NextDouble() * 0.35, v = 0.5 + Rng.NextDouble() * 0.4;
+        double h = Rng.NextDouble() * 6, s = 0.6 + Rng.NextDouble() * 0.35, v = vMin + Rng.NextDouble() * (vMax - vMin);
         double c = v * s, x = c * (1 - Math.Abs(h % 2 - 1)), m = v - c;
         var (r, g, b) = (int)h switch { 0 => (c, x, 0.0), 1 => (x, c, 0.0), 2 => (0.0, c, x), 3 => (0.0, x, c), 4 => (x, 0.0, c), _ => (c, 0.0, x) };
-        SetTheme($"#{(int)((r + m) * 255):x2}{(int)((g + m) * 255):x2}{(int)((b + m) * 255):x2}");
+        return $"#{(int)((r + m) * 255):x2}{(int)((g + m) * 255):x2}{(int)((b + m) * 255):x2}";
+    }
+
+    /// <summary>Re-rolls every colour; with several, the main one comes out darker and the accents brighter.</summary>
+    void RandomTheme_Click(object sender, RoutedEventArgs e)
+    {
+        var n = Math.Max(1, _themes.Count);
+        SetThemes(Enumerable.Range(0, n).Select(i => n == 1 ? RandomColor() : i == 0 ? RandomColor(0.25, 0.5) : RandomColor(0.75, 1.0)));
         _inheritTheme = false;
+    }
+
+    void AddTheme_Click(object sender, RoutedEventArgs e)
+    {
+        if (_themes.Count >= MaxThemes) return;
+        _themes.Add(RandomColor(0.75, 1.0));
+        _inheritTheme = false;
+        RebuildThemes();
+        // open the new colour's picker straight away
+        if (ThemeColors.Children.LastOrDefault() is DropDownButton b) b.Flyout.ShowAt(b);
     }
 
     void InheritTheme_Click(object sender, RoutedEventArgs e)
     {
         _inheritTheme = true;
-        SetTheme(CharacterColor(ClassBox.SelectedValue as string));
+        SetThemes([CharacterColor(ClassBox.SelectedValue as string)]);
     }
 
     void InheritRef_Click(object sender, RoutedEventArgs e)
@@ -437,6 +494,32 @@ public sealed partial class CardsPage : Page
         catch (Exception ex) { App.Main.ShowError(ex.Message); }
     }
 
+    // ---- stop the image being drawn (e.g. the early preview already shows the seed is a miss) ----
+
+    int? _runningJob;
+    bool _pointerOnArt;
+
+    void ArtBox_PointerEntered(object sender, PointerRoutedEventArgs e) { _pointerOnArt = true; UpdateAbortOverlay(); }
+    void ArtBox_PointerExited(object sender, PointerRoutedEventArgs e) { _pointerOnArt = false; UpdateAbortOverlay(); }
+
+    void UpdateAbortOverlay() =>
+        AbortOverlay.Visibility = _pointerOnArt && _runningJob != null ? Visibility.Visible : Visibility.Collapsed;
+
+    async void Abort_Click(object sender, RoutedEventArgs e)
+    {
+        if (_runningJob is not int id) return;
+        try
+        {
+            await Api.Delete($"/api/jobs/{id}");
+            _runningJob = null;
+            AbortBtn.Visibility = Visibility.Collapsed;
+            UpdateAbortOverlay();
+            CardJobText.Text = L.Z("已中止", "Stopped");
+            await Poll();
+        }
+        catch (Exception ex) { App.Main.ShowError(ex.Message); }
+    }
+
     async Task Poll()
     {
         if (_current == null) return;
@@ -455,6 +538,9 @@ public sealed partial class CardsPage : Page
 
         var mine = jobs.Jobs.Where(j => j.CardId == _current.Id).ToList();
         var running = mine.FirstOrDefault(j => j.Status == "running");
+        _runningJob = running?.Id;
+        AbortBtn.Visibility = running != null ? Visibility.Visible : Visibility.Collapsed;
+        UpdateAbortOverlay();
         CardProgress.Visibility = mine.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         CardProgress.IsIndeterminate = running == null;
         if (running != null) CardProgress.Value = running.Percent;
@@ -474,10 +560,12 @@ public sealed partial class CardsPage : Page
                 await bmp.SetSourceAsync(ms);
                 LivePreview.Source = bmp;
                 LivePreview.Visibility = Visibility.Visible;
+                ArtHint.Visibility = Visibility.Collapsed;
                 return;
             }
         }
         LivePreview.Visibility = Visibility.Collapsed;
+        ArtHint.Visibility = ArtImage.Source == null ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ---- images ------------------------------------------------------------------------------
