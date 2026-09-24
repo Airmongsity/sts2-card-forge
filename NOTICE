@@ -1,0 +1,10 @@
+Qwen is licensed under the Qwen RESEARCH LICENSE AGREEMENT, Copyright (c) 2026 Hangzhou Tongyi
+Laboratory Technology Co., Ltd. All Rights Reserved.
+
+Built with Qwen.
+
+This repository contains a LoRA adapter for Qwen/Qwen-Image-2.1. Use of the adapter is subject to
+the Qwen RESEARCH LICENSE AGREEMENT, which permits use, reproduction, distribution, modification and
+derivative works FOR NON-COMMERCIAL PURPOSES ONLY (research or evaluation).
+
+Full license: https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE

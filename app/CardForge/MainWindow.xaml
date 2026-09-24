@@ -1,0 +1,78 @@
+<Window
+    x:Class="CardForge.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:s="using:CardForge.Services"
+    xmlns:c="using:CardForge.Controls">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="36" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid x:Name="TitleBar" Padding="16,0,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <Image Source="Assets/app.ico" Width="16" Height="16" />
+                <TextBlock Text="STS2 Card Forge" Style="{StaticResource CaptionTextBlockStyle}" />
+                <TextBlock Text="{x:Bind s:L.Z('杀戮尖塔 2 卡图生成器','Slay the Spire 2 card art generator')}"
+                           Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+            </StackPanel>
+        </Grid>
+
+        <NavigationView x:Name="Nav" Grid.Row="1" IsBackButtonVisible="Collapsed" IsSettingsVisible="False"
+                        PaneDisplayMode="Left" OpenPaneLength="200" SelectionChanged="Nav_SelectionChanged">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Tag="cards" Content="{x:Bind s:L.Z('卡牌','Cards')}" Icon="Library" />
+                <NavigationViewItem Tag="characters" Content="{x:Bind s:L.Z('MOD 角色','Characters')}" Icon="Contact" />
+                <NavigationViewItem Tag="queue" Content="{x:Bind s:L.Z('生成队列','Queue')}">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE9D5;" /></NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge x:Name="QueueBadge" Visibility="Collapsed" />
+                    </NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
+                <NavigationViewItem Tag="gallery" Content="{x:Bind s:L.Z('图库','Gallery')}" Icon="Pictures" />
+            </NavigationView.MenuItems>
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem Tag="setup" Content="{x:Bind s:L.Z('环境安装','Setup')}">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE896;" /></NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge x:Name="SetupBadge" Visibility="Collapsed" Style="{StaticResource AttentionIconInfoBadgeStyle}" />
+                    </NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
+                <NavigationViewItem Tag="settings" Content="{x:Bind s:L.Z('设置','Settings')}" Icon="Setting" />
+            </NavigationView.FooterMenuItems>
+            <Grid>
+                <Frame x:Name="ContentFrame" />
+                <InfoBar x:Name="ErrorBar" Severity="Error" IsOpen="False" VerticalAlignment="Bottom" Margin="16" IsClosable="True" />
+            </Grid>
+        </NavigationView>
+
+        <Border Grid.Row="2" Padding="16,6" Background="{ThemeResource LayerFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="18">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Ellipse x:Name="BackendDot" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
+                    <TextBlock x:Name="BackendText" Style="{StaticResource CaptionTextBlockStyle}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Ellipse x:Name="ComfyDot" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center" />
+                    <TextBlock x:Name="ComfyText" Style="{StaticResource CaptionTextBlockStyle}" />
+                </StackPanel>
+                <Border x:Name="TempChip" CornerRadius="9" Padding="8,1" Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Ellipse x:Name="TempDot" Width="8" Height="8" VerticalAlignment="Center" />
+                        <FontIcon x:Name="TempFlake" Glyph="&#xE9CA;" FontSize="11" Visibility="Collapsed" Foreground="#FFBEEBFF" />
+                        <TextBlock x:Name="TempChipText" Style="{StaticResource CaptionTextBlockStyle}" />
+                    </StackPanel>
+                </Border>
+                <TextBlock x:Name="WorkerText" Style="{StaticResource CaptionTextBlockStyle}" />
+                <ProgressBar x:Name="WorkerBar" Width="160" VerticalAlignment="Center" Visibility="Collapsed" />
+            </StackPanel>
+        </Border>
+
+        <!-- full-window fire / frost overlay, click-through, on top of everything -->
+        <c:ScreenFx x:Name="Fx" Grid.RowSpan="3" />
+    </Grid>
+</Window>

@@ -1,0 +1,97 @@
+<Page
+    x:Class="CardForge.Views.CharactersPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:s="using:CardForge.Services">
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="280" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Grid Padding="12" RowSpacing="8" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,1,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock Text="{x:Bind s:L.Z('MOD 角色','Mod characters')}" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <ListView x:Name="CharList" Grid.Row="1" SelectionMode="Single" SelectionChanged="CharList_SelectionChanged">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="s:ModCharacter">
+                        <StackPanel Orientation="Horizontal" Spacing="10" Padding="0,8">
+                            <Border Width="16" Height="16" CornerRadius="8" Background="{x:Bind Swatch}" VerticalAlignment="Center" />
+                            <StackPanel>
+                                <TextBlock Text="{x:Bind Title}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock Text="{x:Bind Id}" Style="{StaticResource Hint}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6">
+                <Button Click="New_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <SymbolIcon Symbol="Add" />
+                        <TextBlock Text="{x:Bind s:L.Z('新建角色','New character')}" />
+                    </StackPanel>
+                </Button>
+                <Button Click="Delete_Click"><SymbolIcon Symbol="Delete" /></Button>
+            </StackPanel>
+        </Grid>
+
+        <TextBlock x:Name="EmptyHint" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
+                   Style="{StaticResource Hint}" MaxWidth="520"
+                   Text="{x:Bind s:L.Z('为你的 MOD 角色建档：外观描述会注入该角色每张卡的提示词，角色也会出现在卡牌的“职业”列表里，导出时可作为子文件夹名。','Create a profile for your mod character: its appearance is added to the prompt of every card it owns, it shows up in the card Class list, and its id names the export subfolder.')}" />
+
+        <ScrollViewer x:Name="Editor" Grid.Column="1" Visibility="Collapsed">
+            <StackPanel Padding="24,16" Spacing="12" MaxWidth="860" HorizontalAlignment="Left">
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" /><ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="NameBox" Header="{x:Bind s:L.Z('角色名','Name')}" />
+                    <TextBox x:Name="IdBox" Grid.Column="1" Header="{x:Bind s:L.Z('角色 id（英文；即提示词触发词和导出子文件夹名）','Id (letters; the prompt trigger word and export subfolder)')}" PlaceholderText="my_hero" />
+                </Grid>
+                <Grid ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Bottom">
+                        <DropDownButton ToolTipService.ToolTip="{x:Bind s:L.Z('卡框颜色','Frame colour')}">
+                            <Border x:Name="SwatchPreview" Width="24" Height="18" CornerRadius="3" />
+                            <DropDownButton.Flyout>
+                                <Flyout>
+                                    <ColorPicker x:Name="Picker" IsAlphaEnabled="False" ColorChanged="Picker_ColorChanged" />
+                                </Flyout>
+                            </DropDownButton.Flyout>
+                        </DropDownButton>
+                    </StackPanel>
+                    <TextBox x:Name="ColorBox" Grid.Column="1" Header="{x:Bind s:L.Z('卡框颜色','Frame colour')}" TextChanged="ColorBox_TextChanged" />
+                </Grid>
+                <TextBox x:Name="PaletteBox" Header="{x:Bind s:L.Z('标志配色（英文，可选）','Signature colours (English, optional)')}"
+                         PlaceholderText="violet and teal" />
+                <TextBox x:Name="AppearanceBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="110"
+                         Header="{x:Bind s:L.Z('外观描述（发型、服装、道具等具体特征）','Appearance (hair, outfit, props: concrete traits)')}"
+                         PlaceholderText="{x:Bind s:L.Z('例：身披破旧红斗篷的少年剑士，银白短发，左眼有伤疤，背着一把缺口的大剑','e.g. a young swordsman in a ragged red cloak, short silver hair, a scar over the left eye, a chipped greatsword on his back')}" />
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="RefBox" Header="{x:Bind s:L.Z('参考图（可选，角色设定图）','Reference image (optional, character sheet)')}" IsReadOnly="True" />
+                    <Button Grid.Column="1" VerticalAlignment="Bottom" Content="…" Click="PickRef_Click" />
+                    <Button Grid.Column="2" VerticalAlignment="Bottom" Click="ClearRef_Click"><SymbolIcon Symbol="Clear" /></Button>
+                </Grid>
+                <Image x:Name="RefPreview" MaxHeight="220" HorizontalAlignment="Left" Stretch="Uniform" />
+                <ToggleSwitch x:Name="UseRefSwitch" Header="{x:Bind s:L.Z('该角色的卡牌默认附加此参考图（推荐：保证角色一致；出图约慢 70%）','Attach this reference to the character cards by default (recommended for consistency; ~70% slower)')}" />
+                <TextBlock Style="{StaticResource Hint}"
+                           Text="{x:Bind s:L.Z('提示词以 sts2 card art, 角色id card. 开头：只带上 STS2 画风，不会继承任何原版职业的特征（例如亡灵契约师的骷髅手）。角色长什么样完全由外观描述和参考图决定。','Prompts start with sts2 card art, character-id card. which carries the STS2 style without inheriting any built-in class traits (such as the Necrobinder skeletal hands). The look comes only from the appearance and the reference image.')}" />
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Button Style="{StaticResource AccentButtonStyle}" Content="{x:Bind s:L.Z('保存角色','Save character')}" Click="Save_Click" />
+                    <TextBlock x:Name="SavedText" Style="{StaticResource Hint}" VerticalAlignment="Center" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

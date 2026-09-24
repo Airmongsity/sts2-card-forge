@@ -1,0 +1,97 @@
+<Page
+    x:Class="CardForge.Views.SetupPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:s="using:CardForge.Services"
+    NavigationCacheMode="Required">
+
+    <ScrollViewer>
+        <StackPanel Padding="32,24" Spacing="12" MaxWidth="980" HorizontalAlignment="Left">
+            <TextBlock Text="{x:Bind s:L.Z('环境安装','Setup')}" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock Style="{StaticResource Hint}"
+                       Text="{x:Bind s:L.Z('一键下载并配置本地出图所需的全部组件（约 14 GB）。下载支持断点续传并校验 SHA-256；已存在的文件会被跳过。需要 NVIDIA 显卡（建议 8 GB 显存以上）。',
+                                           'Downloads and configures everything needed for local generation (~14 GB). Downloads resume and are SHA-256 verified; files already present are skipped. Requires an NVIDIA GPU (8 GB VRAM or more recommended).')}" />
+
+            <Border Style="{StaticResource Panel}">
+                <Grid ColumnSpacing="16" RowSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Text="{x:Bind s:L.Z('显卡','GPU')}" VerticalAlignment="Center" />
+                    <TextBlock x:Name="GpuText" Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" />
+
+                    <TextBlock Grid.Row="1" Text="{x:Bind s:L.Z('模型量化','Model quant')}" VerticalAlignment="Center" />
+                    <ComboBox x:Name="QuantBox" Grid.Row="1" Grid.Column="1" MinWidth="360" SelectionChanged="QuantBox_SelectionChanged" />
+
+                    <TextBlock Grid.Row="2" Text="ComfyUI" VerticalAlignment="Center" />
+                    <TextBox x:Name="ComfyPath" Grid.Row="2" Grid.Column="1" IsReadOnly="True" />
+                    <Button Grid.Row="2" Grid.Column="2" Content="{x:Bind s:L.Z('选择已有 ComfyUI…','Use existing ComfyUI…')}" Click="PickComfy_Click" />
+
+                    <TextBlock Grid.Row="3" Text="{x:Bind s:L.Z('下载源','Download source')}" VerticalAlignment="Center" />
+                    <ComboBox x:Name="MirrorBox" Grid.Row="3" Grid.Column="1" MinWidth="360" SelectionChanged="MirrorBox_SelectionChanged">
+                        <x:String>https://huggingface.co</x:String>
+                        <x:String>https://hf-mirror.com</x:String>
+                    </ComboBox>
+                </Grid>
+            </Border>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Name="InstallAll" Style="{StaticResource AccentButtonStyle}" Click="InstallAll_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE896;" FontSize="14" />
+                        <TextBlock Text="{x:Bind s:L.Z('一键安装缺失组件','Install everything missing')}" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="CancelBtn" Content="{x:Bind s:L.Z('取消','Cancel')}" Click="Cancel_Click" IsEnabled="False" />
+                <Button Content="{x:Bind s:L.Z('重新检查','Re-check')}" Click="Recheck_Click" />
+                <CheckBox x:Name="IncludeLora" IsChecked="True" Content="{x:Bind s:L.Z('包含风格 LoRA','Include the style LoRA')}" />
+                <Button Content="{x:Bind s:L.Z('复制下载链接','Copy download links')}" Click="CopyLinks_Click" />
+                <Button Content="{x:Bind s:L.Z('打开模型文件夹','Open models folder')}" Click="OpenModels_Click" />
+            </StackPanel>
+
+            <ItemsControl x:Name="StepsList">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="s:SetupStep">
+                        <Border Style="{StaticResource Panel}" Margin="0,0,0,8">
+                            <Grid ColumnSpacing="14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Glyph="{x:Bind Glyph, Mode=OneWay}" Foreground="{x:Bind GlyphBrush, Mode=OneWay}" FontSize="20" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                <StackPanel Grid.Column="1" Spacing="4">
+                                    <TextBlock Text="{x:Bind Title}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="{x:Bind Description, Mode=OneWay}" Style="{StaticResource Hint}" />
+                                    <TextBlock Text="{x:Bind Detail, Mode=OneWay}" Style="{StaticResource Hint}" MaxLines="3" TextTrimming="CharacterEllipsis" />
+                                    <ProgressBar Value="{x:Bind Progress, Mode=OneWay}" IsIndeterminate="{x:Bind Indeterminate, Mode=OneWay}"
+                                                 Visibility="{x:Bind Busy, Mode=OneWay}" />
+                                </StackPanel>
+                                <Button Grid.Column="2" Tag="{x:Bind Id}" Click="InstallOne_Click" VerticalAlignment="Top"
+                                        Content="{x:Bind s:L.Z('安装','Install')}" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <InfoBar x:Name="DoneBar" Severity="Success" IsClosable="False"
+                     Title="{x:Bind s:L.Z('环境就绪','All set')}"
+                     Message="{x:Bind s:L.Z('所有组件已安装。前往“卡牌”页开始创作。','Everything is installed. Head to Cards to start.')}">
+                <InfoBar.ActionButton>
+                    <Button Content="{x:Bind s:L.Z('开始使用','Get started')}" Click="GoCards_Click" />
+                </InfoBar.ActionButton>
+            </InfoBar>
+
+            <TextBlock Style="{StaticResource Hint}"
+                       Text="{x:Bind s:L.Z('许可：Qwen-Image-2.1 与本 LoRA 遵循 Qwen RESEARCH LICENSE，仅限非商业用途（研究/评估）。生成的卡图同样不得商用。',
+                                           'License: Qwen-Image-2.1 and the LoRA are under the Qwen RESEARCH LICENSE, non-commercial use only (research/evaluation). Generated art may not be used commercially either.')}" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

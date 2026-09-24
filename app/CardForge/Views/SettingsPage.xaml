@@ -1,0 +1,161 @@
+<Page
+    x:Class="CardForge.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:s="using:CardForge.Services">
+
+    <Grid>
+    <ScrollViewer>
+        <StackPanel Padding="32,24,32,120" Spacing="8" MaxWidth="900" HorizontalAlignment="Left">
+            <TextBlock Text="{x:Bind s:L.Z('设置','Settings')}" Style="{StaticResource TitleTextBlockStyle}" />
+
+            <!-- language -->
+            <TextBlock Text="{x:Bind s:L.Z('语言','Language')}" Style="{StaticResource SectionHeader}" />
+            <Border Style="{StaticResource Panel}">
+                <StackPanel Orientation="Horizontal" Spacing="16">
+                    <ComboBox x:Name="UiLangBox" Header="{x:Bind s:L.Z('界面语言（重启后生效）','UI language (applies after restart)')}" MinWidth="240" />
+                    <ComboBox x:Name="CardLangBox" Header="{x:Bind s:L.Z('AI 写卡牌文字所用语言','Language AI writes card text in')}" MinWidth="240" />
+                </StackPanel>
+            </Border>
+
+            <!-- prompt AI -->
+            <TextBlock Text="{x:Bind s:L.Z('提示词 AI','Prompt AI')}" Style="{StaticResource SectionHeader}" />
+            <Border Style="{StaticResource Panel}">
+                <StackPanel Spacing="10">
+                    <TextBlock Style="{StaticResource Hint}"
+                               Text="{x:Bind s:L.Z('用于把卡牌描述写成图像提示词、以及构思新卡牌。可用任何兼容 OpenAI 接口的服务（含本地 Ollama / LM Studio），或完全离线的模板模式。','Turns card descriptions into image prompts and brainstorms new cards. Works with Claude, any OpenAI-compatible service (including local Ollama / LM Studio), or a fully offline template mode.')}" />
+                    <ComboBox x:Name="PresetBox" Header="{x:Bind s:L.Z('服务商','Provider')}" MinWidth="320" SelectionChanged="PresetBox_SelectionChanged" DisplayMemberPath="Name" />
+                    <StackPanel x:Name="LlmFields" Spacing="10">
+                        <TextBox x:Name="BaseUrlBox" Header="Base URL" />
+                        <Grid ColumnSpacing="10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <TextBox x:Name="ModelBox" Header="{x:Bind s:L.Z('模型','Model')}" />
+                            <ComboBox x:Name="EffortBox" Grid.Column="1" Header="{x:Bind s:L.Z('思考力度（Claude）','Effort (Claude)')}" HorizontalAlignment="Stretch">
+                                <x:String>low</x:String>
+                                <x:String>medium</x:String>
+                                <x:String>high</x:String>
+                            </ComboBox>
+                        </Grid>
+                        <PasswordBox x:Name="KeyBox" Header="API key" />
+                        <TextBlock x:Name="KeyHint" Style="{StaticResource Hint}" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Content="{x:Bind s:L.Z('测试','Test')}" Click="TestLlm_Click" />
+                        <ProgressRing x:Name="TestRing" IsActive="False" Width="20" Height="20" />
+                    </StackPanel>
+                    <TextBlock x:Name="TestResult" Style="{StaticResource Hint}" IsTextSelectionEnabled="True" />
+                </StackPanel>
+            </Border>
+
+            <!-- prompt templates -->
+            <TextBlock Text="{x:Bind s:L.Z('默认提示词模板','Default prompt templates')}" Style="{StaticResource SectionHeader}" />
+            <Border Style="{StaticResource Panel}">
+                <StackPanel Spacing="10">
+                    <TextBlock Style="{StaticResource Hint}"
+                               Text="{x:Bind s:L.Z('AI 生成提示词时遵循下面的规则（{lang} = 说明文字的语言）。按你的 MOD 画风修改，效果不理想可随时恢复默认。','The AI follows these rules when it writes an image prompt ({lang} = language of the notes line). Adapt them to your mod; restore the default any time.')}" />
+                    <TextBox x:Name="SystemPromptBox" Header="{x:Bind s:L.Z('AI 写提示词的规则','Rules for the AI prompt writer')}"
+                             AcceptsReturn="True" TextWrapping="Wrap" MinHeight="260" MaxHeight="460" FontFamily="Consolas" FontSize="12"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                    <Button Content="{x:Bind s:L.Z('恢复默认规则','Restore default rules')}" Click="ResetSystemPrompt_Click" />
+                    <TextBox x:Name="TemplateBox" Header="{x:Bind s:L.Z('离线模板（不使用 AI 时）','Offline template (no AI)')}" AcceptsReturn="True" TextWrapping="Wrap" />
+                    <TextBlock Style="{StaticResource Hint}"
+                               Text="{x:Bind s:L.Z('可用占位符：{trigger} 触发职业 · {concept} 画面构思 · {name} 卡名 · {effect} 卡牌效果 · {palette} 角色配色 · {character} 角色外观','Placeholders: {trigger} trigger class · {concept} art concept · {name} card name · {effect} card text · {palette} character colours · {character} character appearance')}" />
+                    <Button Content="{x:Bind s:L.Z('恢复默认模板','Restore default template')}" Click="ResetTemplate_Click" />
+                </StackPanel>
+            </Border>
+
+            <!-- generation defaults -->
+            <TextBlock Text="{x:Bind s:L.Z('默认生成参数','Generation defaults')}" Style="{StaticResource SectionHeader}" />
+            <Border Style="{StaticResource Panel}">
+                <StackPanel Spacing="10">
+                    <Grid ColumnSpacing="10" RowSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="2*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
+                        <ComboBox x:Name="SizeBox" Header="{x:Bind s:L.Z('尺寸','Size')}" HorizontalAlignment="Stretch" DisplayMemberPath="Name" SelectedValuePath="Id" />
+                        <NumberBox x:Name="VariantsBox" Grid.Column="1" Header="{x:Bind s:L.Z('每次张数','Images per run')}" Minimum="1" Maximum="16" SpinButtonPlacementMode="Compact" />
+                        <NumberBox x:Name="CfgBox" Grid.Column="2" Header="CFG" Minimum="1" Maximum="10" SmallChange="0.5" SpinButtonPlacementMode="Compact" />
+                        <ComboBox x:Name="LoraBox" Grid.Row="1" Header="LoRA" HorizontalAlignment="Stretch" />
+                        <NumberBox x:Name="StrengthBox" Grid.Row="1" Grid.Column="1" Header="{x:Bind s:L.Z('LoRA 强度','LoRA strength')}" Minimum="0" Maximum="2" SmallChange="0.05" SpinButtonPlacementMode="Compact" />
+                        <NumberBox x:Name="StepsBox" Grid.Row="1" Grid.Column="2" Header="{x:Bind s:L.Z('步数','Steps')}" Minimum="8" Maximum="60" SpinButtonPlacementMode="Compact" />
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Content="{x:Bind s:L.Z('导入 LoRA 文件…','Import a LoRA file…')}" Click="ImportLora_Click" />
+                        <TextBlock Style="{StaticResource Hint}" VerticalAlignment="Center"
+                                   Text="{x:Bind s:L.Z('复制到 ComfyUI 的 models/loras，可在此处或每张卡的生成参数里选用。','Copied into ComfyUI models/loras; pick it here or per card.')}" />
+                    </StackPanel>
+                    <TextBox x:Name="SuffixBox" Header="{x:Bind s:L.Z('默认风格后缀（正面，自动接在每条提示词后）','Default style suffix (positive, appended to every prompt)')}" AcceptsReturn="True" TextWrapping="Wrap" />
+                    <TextBox x:Name="NegativeBox" Header="{x:Bind s:L.Z('默认负面提示词','Default negative prompt')}" AcceptsReturn="True" TextWrapping="Wrap" />
+                    <TextBlock Style="{StaticResource Hint}"
+                               Text="{x:Bind s:L.Z('推荐：CFG 3.0、LoRA 强度 0.9、25 步。CFG 1.0 会让模型基本忽略提示词；40 步并不比 25 步好。','Recommended: CFG 3.0, LoRA strength 0.9, 25 steps. At CFG 1.0 the model mostly ignores the prompt; 40 steps are no better than 25.')}" />
+                </StackPanel>
+            </Border>
+
+            <!-- performance & heat -->
+            <TextBlock Text="{x:Bind s:L.Z('性能与过热保护','Performance and overheat protection')}" Style="{StaticResource SectionHeader}" />
+            <Border Style="{StaticResource Panel}">
+                <StackPanel Spacing="10">
+                    <ComboBox x:Name="ProfileBox" Header="{x:Bind s:L.Z('性能档位（重启 ComfyUI 后生效）','Performance profile (applies after restarting ComfyUI)')}" MinWidth="420" DisplayMemberPath="Name" />
+                    <TextBlock Style="{StaticResource Hint}"
+                               Text="{x:Bind s:L.Z('低显存/低内存机器：选“低配”；仍然爆显存或极慢再选“最低”。同时可在“环境安装”里换用更小的量化模型（Q4/Q3），或用“草稿”尺寸先挑构图再精修。','Low VRAM / RAM machines: choose Low; if it still runs out of memory or crawls, choose Minimum. You can also switch to a smaller quant (Q4/Q3) in Setup, or use the Draft size to pick compositions before refining.')}" />
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
+                        <NumberBox x:Name="CoolTriggerBox" Header="{x:Bind s:L.Z('超过此温度开始降温 (°C，0=关)','Cool down above (°C, 0 = off)')}" Minimum="0" Maximum="105" SpinButtonPlacementMode="Compact" />
+                        <NumberBox x:Name="CoolTempBox" Grid.Column="1" Header="{x:Bind s:L.Z('降到此温度后继续 (°C)','Resume below (°C)')}" Minimum="30" Maximum="100" SpinButtonPlacementMode="Compact" />
+                        <NumberBox x:Name="CoolMaxBox" Grid.Column="2" Header="{x:Bind s:L.Z('最长等待 (秒)','Max wait (s)')}" Minimum="0" Maximum="3600" SpinButtonPlacementMode="Compact" />
+                        <NumberBox x:Name="CooldownBox" Grid.Column="3" Header="{x:Bind s:L.Z('每张额外间隔 (秒，可选)','Extra gap per image (s, optional)')}" Minimum="0" Maximum="600" SpinButtonPlacementMode="Compact" />
+                    </Grid>
+                    <ComboBox x:Name="PreviewBox" Header="{x:Bind s:L.Z('生成过程实时预览（重启 ComfyUI 后生效）','Live preview while generating (applies after restarting ComfyUI)')}" MinWidth="420" DisplayMemberPath="Name" />
+                    <TextBlock Style="{StaticResource Hint}"
+                               Text="{x:Bind s:L.Z('8 GB 显卡实测：latent2rgb 不影响速度；auto 会挤爆显存、慢 15 倍以上，只适合 12 GB 以上显卡。','Measured on an 8 GB card: latent2rgb costs nothing; auto overflowed VRAM and ran over 15x slower, so use it only on 12 GB+ cards.')}" />
+                    <ToggleSwitch x:Name="AutostartSwitch" Header="{x:Bind s:L.Z('启动应用时预先启动 ComfyUI','Start ComfyUI when the app starts')}" />
+                    <Button Content="{x:Bind s:L.Z('重启 ComfyUI','Restart ComfyUI')}" Click="RestartComfy_Click" />
+                </StackPanel>
+            </Border>
+
+            <!-- paths -->
+            <TextBlock Text="{x:Bind s:L.Z('路径','Paths')}" Style="{StaticResource SectionHeader}" />
+            <Border Style="{StaticResource Panel}">
+                <StackPanel Spacing="10">
+                    <TextBox x:Name="ComfyRootBox" Header="ComfyUI" IsReadOnly="True" />
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBox x:Name="ExportDirBox" Header="{x:Bind s:L.Z('默认导出文件夹','Default export folder')}" />
+                        <Button Grid.Column="1" VerticalAlignment="Bottom" Content="…" Click="PickExport_Click" />
+                    </Grid>
+                    <Button Content="{x:Bind s:L.Z('打开数据文件夹','Open data folder')}" Click="OpenData_Click" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+
+    <!-- floating "unsaved changes" bar: appears whenever the form differs from what is saved -->
+    <Border x:Name="SaveBar" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="24,0,24,24" Padding="20,12"
+            CornerRadius="12" Visibility="Collapsed" Translation="0,0,32"
+            Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource AccentFillColorDefaultBrush}" BorderThickness="1">
+        <Border.Shadow>
+            <ThemeShadow />
+        </Border.Shadow>
+        <StackPanel Orientation="Horizontal" Spacing="14">
+            <FontIcon Glyph="&#xE7BA;" FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center" />
+            <TextBlock x:Name="SaveBarText" VerticalAlignment="Center" Text="{x:Bind s:L.Z('有未保存的更改','You have unsaved changes')}" />
+            <Button Style="{StaticResource AccentButtonStyle}" Content="{x:Bind s:L.Z('保存','Save')}" Click="Save_Click" />
+            <Button Content="{x:Bind s:L.Z('放弃','Discard')}" Click="Discard_Click" />
+        </StackPanel>
+    </Border>
+
+    <!-- brief confirmation after saving -->
+    <Border x:Name="SavedToast" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="24" Padding="16,10"
+            CornerRadius="10" Visibility="Collapsed" Translation="0,0,32" Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}">
+        <Border.Shadow>
+            <ThemeShadow />
+        </Border.Shadow>
+        <StackPanel Orientation="Horizontal" Spacing="10">
+            <FontIcon Glyph="&#xE73E;" FontSize="14" Foreground="#FF50BE6E" />
+            <TextBlock x:Name="SavedText" />
+        </StackPanel>
+    </Border>
+    </Grid>
+</Page>

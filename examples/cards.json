@@ -1,0 +1,137 @@
+{
+ "characters": [
+  {
+   "id": "example_rogue",
+   "name": "示例·刺客 Example Rogue",
+   "base_class": "silent",
+   "color": "#3f8a3a",
+   "palette": "poison green, yellow and olive",
+   "appearance": "a hooded figure in a green cloak with brown leather gloves, face hidden in shadow"
+  },
+  {
+   "id": "example_warrior",
+   "name": "示例·战士 Example Warrior",
+   "base_class": "ironclad",
+   "color": "#b3322b",
+   "palette": "fiery orange, deep purple and maroon",
+   "appearance": "a heavily armored brute wielding a spiked iron mace"
+  },
+  {
+   "id": "example_tinker",
+   "name": "示例·工匠 Example Tinker",
+   "base_class": "colorless",
+   "color": "#c07a3a",
+   "palette": "rusty orange and brown",
+   "appearance": "a wandering tinker who fixes old machines"
+  }
+ ],
+ "cards": [
+  {
+   "name": "淬毒刺击 Venom Stab",
+   "slug": "venom_stab",
+   "cls": "example_rogue",
+   "type": "attack",
+   "rarity": "common",
+   "cost": "1",
+   "description": "造成 6 点伤害。给予 3 层中毒。 / Deal 6 damage. Apply 3 Poison.",
+   "concept": "a hooded hand thrusting a curved dagger with a poison-green trail",
+   "prompt": "sts2 card art, silent card. A hooded green-cloaked hand thrusts a curved dagger forward, blade glinting with a bright white sparkle, poison-green trail, yellow and olive background.",
+   "images": [
+    {
+     "file": "dagger.jpg",
+     "seed": 11,
+     "prompt": "sts2 card art, silent card. A hooded green-cloaked hand thrusts a curved dagger forward, blade glinting with a bright white sparkle, poison-green trail, yellow and olive background. Highly detailed: crisp faceted shapes, hard-edged cast shadows, a thin bright rim-light outline tracing the subject, layered highlights, small flying chips and sparks, few flat colors, no gradients.",
+     "params": {
+      "prompt": "sts2 card art, silent card. A hooded green-cloaked hand thrusts a curved dagger forward, blade glinting with a bright white sparkle, poison-green trail, yellow and olive background. Highly detailed: crisp faceted shapes, hard-edged cast shadows, a thin bright rim-light outline tracing the subject, layered highlights, small flying chips and sparks, few flat colors, no gradients.",
+      "negative": "flat, plain, simple, blurry, smooth gradients, empty background, low detail, deformed, extra limbs",
+      "width": 1280,
+      "height": 960,
+      "steps": 25,
+      "cfg": 3.0,
+      "lora": "deckbuilder_cardart_style_lora_v1_fp16.safetensors",
+      "lora_strength": 0.9,
+      "seed": 11,
+      "size_preset": "hires"
+     }
+    }
+   ]
+  },
+  {
+   "name": "碎岩重击 Shatter",
+   "slug": "shatter",
+   "cls": "example_warrior",
+   "type": "attack",
+   "rarity": "uncommon",
+   "cost": "2",
+   "description": "造成 14 点伤害。 / Deal 14 damage.",
+   "concept": "a spiked mace crashing into rock, stone shards flying",
+   "prompt": "sts2 card art, ironclad card. A spiked mace crashes down into a rocky surface, stone shards flying, a burst of fiery orange and yellow energy at the point of impact, deep purple and maroon background, red outline tracing the mace.",
+   "images": [
+    {
+     "file": "bash.jpg",
+     "seed": 11,
+     "prompt": "sts2 card art, ironclad card. A spiked mace crashes down into a rocky surface, stone shards flying, a burst of fiery orange and yellow energy at the point of impact, deep purple and maroon background, red outline tracing the mace. Highly detailed: crisp faceted shapes, hard-edged cast shadows, a thin bright rim-light outline tracing the subject, layered highlights, small flying chips and sparks, few flat colors, no gradients.",
+     "params": {
+      "prompt": "sts2 card art, ironclad card. A spiked mace crashes down into a rocky surface, stone shards flying, a burst of fiery orange and yellow energy at the point of impact, deep purple and maroon background, red outline tracing the mace. Highly detailed: crisp faceted shapes, hard-edged cast shadows, a thin bright rim-light outline tracing the subject, layered highlights, small flying chips and sparks, few flat colors, no gradients.",
+      "negative": "flat, plain, simple, blurry, smooth gradients, empty background, low detail, deformed, extra limbs",
+      "width": 1280,
+      "height": 960,
+      "steps": 25,
+      "cfg": 3.0,
+      "lora": "deckbuilder_cardart_style_lora_v1_fp16.safetensors",
+      "lora_strength": 0.9,
+      "seed": 11,
+      "size_preset": "hires"
+     }
+    },
+    {
+     "file": "bash_variant.jpg",
+     "seed": 11,
+     "prompt": "sts2 card art, ironclad card. A spiked mace crashes down with force, embedding itself into a rocky surface and sending shards of stone flying outward. The impact is highlighted by a burst of fiery orange and yellow energy radiating from the point of contact, contrasting against a deep purple and maroon background. The mace's metallic gray head glows with heat, framed tightly to emphasize the explosive moment of impact. Highly detailed: crisp faceted shard shapes, chipped and nicked metal edges, rivets and worn scratches on the mace head, a thin bright red outline tracing the weapon, layered highlights and hard-edged cast shadows, small flying stone chips and sparks scattered across the frame, intricate texture on the rock.",
+     "params": {
+      "prompt": "sts2 card art, ironclad card. A spiked mace crashes down with force, embedding itself into a rocky surface and sending shards of stone flying outward. The impact is highlighted by a burst of fiery orange and yellow energy radiating from the point of contact, contrasting against a deep purple and maroon background. The mace's metallic gray head glows with heat, framed tightly to emphasize the explosive moment of impact. Highly detailed: crisp faceted shard shapes, chipped and nicked metal edges, rivets and worn scratches on the mace head, a thin bright red outline tracing the weapon, layered highlights and hard-edged cast shadows, small flying stone chips and sparks scattered across the frame, intricate texture on the rock.",
+      "negative": "flat, plain, simple, blurry, smooth gradients, empty background, low detail, deformed, extra limbs",
+      "width": 1024,
+      "height": 768,
+      "steps": 25,
+      "cfg": 3.0,
+      "lora": "deckbuilder_cardart_style_lora_v1_fp16.safetensors",
+      "lora_strength": 0.9,
+      "seed": 11,
+      "size_preset": "hires"
+     }
+    }
+   ]
+  },
+  {
+   "name": "老伙计 Old Faithful",
+   "slug": "old_faithful",
+   "cls": "example_tinker",
+   "type": "power",
+   "rarity": "rare",
+   "cost": "1",
+   "description": "每回合开始时，抽 1 张牌。 / At the start of your turn, draw 1 card.",
+   "concept": "an old bicycle on its kickstand, one wheel still spinning",
+   "prompt": "sts2 card art, colorless card. An old bicycle leaning on its kickstand, one wheel spinning, complete frame with two round wheels, handlebars, pedals and chain clearly visible. Orange and brown background.",
+   "images": [
+    {
+     "file": "bicycle.jpg",
+     "seed": 11,
+     "prompt": "sts2 card art, colorless card. An old bicycle leaning on its kickstand, one wheel spinning, complete frame with two round wheels, handlebars, pedals and chain clearly visible. Orange and brown background. Highly detailed: crisp faceted shapes, hard-edged cast shadows, a thin bright rim-light outline tracing the subject, layered highlights, small flying chips and sparks, few flat colors, no gradients.",
+     "params": {
+      "prompt": "sts2 card art, colorless card. An old bicycle leaning on its kickstand, one wheel spinning, complete frame with two round wheels, handlebars, pedals and chain clearly visible. Orange and brown background. Highly detailed: crisp faceted shapes, hard-edged cast shadows, a thin bright rim-light outline tracing the subject, layered highlights, small flying chips and sparks, few flat colors, no gradients.",
+      "negative": "flat, plain, simple, blurry, smooth gradients, empty background, low detail, deformed, extra limbs",
+      "width": 1280,
+      "height": 960,
+      "steps": 25,
+      "cfg": 3.0,
+      "lora": "deckbuilder_cardart_style_lora_v1_fp16.safetensors",
+      "lora_strength": 0.9,
+      "seed": 11,
+      "size_preset": "hires"
+     }
+    }
+   ]
+  }
+ ]
+}

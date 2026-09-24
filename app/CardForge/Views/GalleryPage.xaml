@@ -1,0 +1,69 @@
+<Page
+    x:Class="CardForge.Views.GalleryPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:s="using:CardForge.Services"
+    NavigationCacheMode="Required">
+
+    <Grid Padding="24,16" ColumnSpacing="20" RowSpacing="10">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="440" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Orientation="Horizontal" Spacing="10">
+            <TextBlock Text="{x:Bind s:L.Z('图库','Gallery')}" Style="{StaticResource TitleTextBlockStyle}" VerticalAlignment="Center" Margin="0,0,12,0" />
+            <ComboBox x:Name="ProjectFilter" MinWidth="200" SelectionChanged="Filter_Changed" />
+            <ToggleButton x:Name="FavFilter" Click="Filter_Click">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <SymbolIcon Symbol="OutlineStar" />
+                    <TextBlock Text="{x:Bind s:L.Z('只看收藏','Favorites only')}" />
+                </StackPanel>
+            </ToggleButton>
+            <Button Click="Refresh_Click"><SymbolIcon Symbol="Refresh" /></Button>
+            <TextBlock x:Name="CountText" Style="{StaticResource Hint}" VerticalAlignment="Center" />
+        </StackPanel>
+
+        <GridView x:Name="Grid" Grid.Row="1" SelectionMode="Single" SelectionChanged="Grid_SelectionChanged">
+            <GridView.ItemTemplate>
+                <DataTemplate x:DataType="s:ImageRec">
+                    <Grid Width="240" RowSpacing="4" Margin="0,0,0,6">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="180" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Border CornerRadius="6" Background="{ThemeResource ControlFillColorDefaultBrush}">
+                            <Image Source="{x:Bind Thumb}" Stretch="UniformToFill" />
+                        </Border>
+                        <TextBlock Text="{x:Bind FavGlyph, Mode=OneWay}" Foreground="Gold" Margin="6,2" FontSize="16" />
+                        <TextBlock Grid.Row="1" Text="{x:Bind Caption}" Style="{StaticResource Hint}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                    </Grid>
+                </DataTemplate>
+            </GridView.ItemTemplate>
+        </GridView>
+
+        <ScrollViewer Grid.Column="1" Grid.RowSpan="2">
+            <StackPanel x:Name="Detail" Spacing="10" Visibility="Collapsed">
+                <Border CornerRadius="8" Background="{ThemeResource ControlFillColorDefaultBrush}">
+                    <Image x:Name="Big" Stretch="Uniform" MaxHeight="340" />
+                </Border>
+                <TextBlock x:Name="DetailTitle" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
+                <TextBlock x:Name="DetailMeta" Style="{StaticResource Hint}" IsTextSelectionEnabled="True" />
+                <TextBox x:Name="DetailPrompt" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" Header="{x:Bind s:L.Z('提示词','Prompt')}" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Click="Fav_Click" Content="{x:Bind s:L.Z('收藏','Favorite')}" />
+                    <Button Click="CopyPrompt_Click" Content="{x:Bind s:L.Z('复制提示词','Copy prompt')}" />
+                    <Button Click="SaveAs_Click" Content="{x:Bind s:L.Z('另存为…','Save as…')}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Click="Show_Click" Content="{x:Bind s:L.Z('在资源管理器中显示','Show in Explorer')}" />
+                    <Button Click="Delete_Click" Content="{x:Bind s:L.Z('删除','Delete')}" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

@@ -1,0 +1,19 @@
+# Allowlist: only STS2 Card Forge itself is versioned. Everything else in this folder (ComfyUI, models,
+# LoRA training data and scripts, game card files, local data) stays local.
+/*
+!/.gitignore
+!/README.md
+!/NOTICE
+!/build_release.ps1
+!/run_dev.bat
+!/app/
+!/backend/
+!/examples/
+
+# build output and caches inside the allowed folders
+bin/
+obj/
+.vs/
+__pycache__/
+*.pyc
+*.user
