@@ -124,43 +124,77 @@ public static class Gpu
         _ => L.Z("仅 CPU（极慢，一张图可能要数小时）", "CPU only (extremely slow, hours per image)"),
     };
 
-    /// <summary>Human-readable problems with this machine for the chosen package (empty = fine).</summary>
-    public static List<string> Warnings(string package)
+    /// <summary>Problems with this machine for the chosen package. Severe ones mean images will likely not generate
+    /// (or only on the CPU), so Setup asks before downloading anything big.</summary>
+    public static List<(string Text, bool Severe)> Warnings(string package)
     {
-        var w = new List<string>();
+        var w = new List<(string, bool)>();
         var i = Info;
+        void Add(bool severe, string zh, string en) => w.Add((L.Z(zh, en), severe));
+
+        var vendorOfPackage = package switch
+        {
+            "nvidia" or "nvidia_cu126" => GpuVendor.Nvidia,
+            "amd" => GpuVendor.Amd,
+            "intel" => GpuVendor.Intel,
+            _ => GpuVendor.None,
+        };
+        if (vendorOfPackage != GpuVendor.None && i.Vendor != vendorOfPackage)
+            Add(true, $"所选运行包与检测到的显卡（{(i.Vendor == GpuVendor.None ? "无" : i.Name)}）品牌不符。",
+                      $"The selected package does not match the detected GPU ({(i.Vendor == GpuVendor.None ? "none" : i.Name)}).");
         if (package == "nvidia" && i.Vendor == GpuVendor.Nvidia && i.Driver is < MinDriverCu130)
-            w.Add(L.Z($"NVIDIA 驱动 {i.Driver} 过旧：CUDA 13 需要 580 或更新版本，请到 nvidia.cn 更新驱动。",
-                      $"NVIDIA driver {i.Driver} is too old: CUDA 13 needs 580 or newer. Update it from nvidia.com."));
+            Add(true, $"NVIDIA 驱动 {i.Driver} 过旧：CUDA 13 需要 580 或更新版本，请先到 nvidia.cn 更新驱动。",
+                      $"NVIDIA driver {i.Driver} is too old: CUDA 13 needs 580 or newer. Update it from nvidia.com first.");
         if (package == "nvidia_cu126" && i.Vendor == GpuVendor.Nvidia && i.Driver is < MinDriverCu126)
-            w.Add(L.Z($"NVIDIA 驱动 {i.Driver} 过旧：请更新到 528 或更新版本。", $"NVIDIA driver {i.Driver} is too old: update to 528 or newer."));
+            Add(true, $"NVIDIA 驱动 {i.Driver} 过旧：请先更新到 528 或更新版本。", $"NVIDIA driver {i.Driver} is too old: update to 528 or newer first.");
         if (package == "nvidia" && i.ComputeCap is < 7.5)
-            w.Add(L.Z("这张显卡（GTX 10 系或更早）不被 CUDA 13 包支持，请选“NVIDIA 旧卡”运行包。",
-                      "This card (GTX 10 series or older) is not supported by the CUDA 13 package; choose \"NVIDIA legacy\"."));
+            Add(true, "这张显卡（GTX 10 系或更早）不被 CUDA 13 包支持，请选“NVIDIA 旧卡”运行包。",
+                      "This card (GTX 10 series or older) is not supported by the CUDA 13 package; choose \"NVIDIA legacy\".");
         if (package == "nvidia_cu126" && i.ComputeCap is >= 7.5)
-            w.Add(L.Z("RTX 20 / GTX 16 系及更新的显卡请使用标准 NVIDIA 包（ComfyUI 官方不建议在新卡上用 CUDA 12.6 包）。",
-                      "RTX 20 / GTX 16 series and newer should use the standard NVIDIA package (ComfyUI advises against CUDA 12.6 on them)."));
+            Add(false, "RTX 20 / GTX 16 系及更新的显卡请使用标准 NVIDIA 包（ComfyUI 官方不建议在新卡上用 CUDA 12.6 包）。",
+                       "RTX 20 / GTX 16 series and newer should use the standard NVIDIA package (ComfyUI advises against CUDA 12.6 on them).");
         if (i.Vendor == GpuVendor.Nvidia && i.Driver == null && package.StartsWith("nvidia"))
-            w.Add(L.Z("检测到 NVIDIA 显卡但没有 nvidia-smi：请先安装 NVIDIA 显卡驱动。", "NVIDIA card found but no nvidia-smi: install the NVIDIA driver first."));
+            Add(true, "检测到 NVIDIA 显卡但没有 nvidia-smi：请先安装 NVIDIA 显卡驱动。", "NVIDIA card found but no nvidia-smi: install the NVIDIA driver first.");
         if (package == "amd")
         {
             if (Environment.OSVersion.Version.Build < 22000)
-                w.Add(L.Z("ComfyUI 的 AMD（ROCm）包需要 Windows 11。", "ComfyUI's AMD (ROCm) package needs Windows 11."));
+                Add(true, "ComfyUI 的 AMD（ROCm）包需要 Windows 11。", "ComfyUI's AMD (ROCm) package needs Windows 11.");
             if (i.Vendor == GpuVendor.Amd && !AmdSupported(i.Name))
-                w.Add(L.Z("这张 AMD 显卡（RDNA 1 及更早，如 RX 5000/500/Vega）不受 ROCm 支持。", "This AMD card (RDNA 1 or older, e.g. RX 5000/500/Vega) is not supported by ROCm."));
-            w.Add(L.Z("AMD 下无法读取 GPU 温度，过热保护不会生效。", "GPU temperature is not readable on AMD, so overheat protection is inactive."));
+                Add(true, "这张 AMD 显卡（RDNA 1 及更早，如 RX 5000/500/Vega）不受 ROCm 支持。", "This AMD card (RDNA 1 or older, e.g. RX 5000/500/Vega) is not supported by ROCm.");
+            Add(false, "AMD 下无法读取 GPU 温度，过热保护不会生效。", "GPU temperature is not readable on AMD, so overheat protection is inactive.");
         }
         if (package == "intel")
         {
             if (!IsArc(i.Name))
-                w.Add(L.Z("Intel 核显（UHD / Iris）性能不足，只有 Arc 独显受支持。", "Intel integrated graphics (UHD / Iris) are too weak; only Arc GPUs are supported."));
-            w.Add(L.Z("Intel 下无法读取 GPU 温度，过热保护不会生效。", "GPU temperature is not readable on Intel, so overheat protection is inactive."));
+                Add(true, "Intel 核显（UHD / Iris）性能不足，只有 Arc 独显受支持。", "Intel integrated graphics (UHD / Iris) are too weak; only Arc GPUs are supported.");
+            Add(false, "Intel 下无法读取 GPU 温度，过热保护不会生效。", "GPU temperature is not readable on Intel, so overheat protection is inactive.");
         }
         if (package == "cpu")
-            w.Add(L.Z("没有可用的显卡：将以 CPU 模式运行，极慢（一张图可能要数小时）。", "No usable GPU: runs on the CPU, extremely slowly (hours per image)."));
+            Add(true, "没有可用的显卡：只能以 CPU 模式运行，极慢（一张图可能要数小时）。", "No usable GPU: it can only run on the CPU, extremely slowly (hours per image).");
         else if (i.VramMiB is < 5500)
-            w.Add(L.Z("显存不足 6 GB：会自动使用最小的模型和最低性能档位，出图较慢。", "Less than 6 GB of VRAM: the smallest model and lowest profile are used; generation is slow."));
+            Add(false, "显存不足 6 GB：会自动使用最小的模型和最低性能档位，出图较慢。", "Less than 6 GB of VRAM: the smallest model and lowest profile are used; generation is slow.");
+        if (RamMiB is > 0 and < 12000)
+            Add(true, $"内存只有 {RamMiB / 1024.0:0} GB：模型运行至少需要约 12 GB 内存（建议 16 GB），很可能无法出图。",
+                      $"Only {RamMiB / 1024.0:0} GB of RAM: the models need about 12 GB (16 GB recommended); generation will likely fail.");
         return w;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct MemoryStatusEx
+    {
+        public uint Length, MemoryLoad;
+        public ulong TotalPhys, AvailPhys, TotalPageFile, AvailPageFile, TotalVirtual, AvailVirtual, AvailExtendedVirtual;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool GlobalMemoryStatusEx(ref MemoryStatusEx m);
+
+    public static long RamMiB
+    {
+        get
+        {
+            var m = new MemoryStatusEx { Length = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MemoryStatusEx>() };
+            return GlobalMemoryStatusEx(ref m) ? (long)(m.TotalPhys / 1048576) : 0;
+        }
     }
 
     public static string Summary()

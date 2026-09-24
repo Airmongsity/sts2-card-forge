@@ -116,6 +116,8 @@ public sealed partial class SettingsPage : Page
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         _loading = true;
+        VersionText.Text = L.Z("当前版本 ", "Version ") + Updater.Current;
+        UpdateCheckSwitch.IsOn = Updater.AutoCheck;
         try
         {
             _s = await Api.Get<JsonObject>("/api/settings");
@@ -340,4 +342,19 @@ public sealed partial class SettingsPage : Page
     }
 
     void OpenData_Click(object sender, RoutedEventArgs e) => Process.Start("explorer.exe", AppPaths.Data);
+
+    void UpdateCheckSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_loading) AppPaths.SaveSettings(s => s["update_check"] = UpdateCheckSwitch.IsOn);
+    }
+
+    async void CheckUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        CheckUpdateBtn.IsEnabled = false;
+        try { await App.Main.CheckForUpdates(manual: true); }
+        finally { CheckUpdateBtn.IsEnabled = true; }
+    }
+
+    void ReleasesPage_Click(object sender, RoutedEventArgs e) =>
+        Process.Start(new ProcessStartInfo(Updater.ReleasesPage) { UseShellExecute = true });
 }

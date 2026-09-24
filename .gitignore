@@ -4,6 +4,7 @@
 !/.gitignore
 !/README.md
 !/NOTICE
+!/VERSION
 !/build_release.ps1
 !/run_dev.bat
 !/app/

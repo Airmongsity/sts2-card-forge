@@ -46,6 +46,19 @@
             <Grid>
                 <Frame x:Name="ContentFrame" />
                 <InfoBar x:Name="ErrorBar" Severity="Error" IsOpen="False" VerticalAlignment="Bottom" Margin="16" IsClosable="True" />
+                <InfoBar x:Name="UpdateBar" Severity="Informational" IsOpen="False" IsClosable="True" MaxWidth="560"
+                         VerticalAlignment="Top" HorizontalAlignment="Right" Margin="16">
+                    <InfoBar.Content>
+                        <StackPanel Spacing="8" Margin="0,0,0,12">
+                            <ProgressBar x:Name="UpdateProgress" Visibility="Collapsed" />
+                            <StackPanel x:Name="UpdateButtons" Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="UpdateNowBtn" Style="{StaticResource AccentButtonStyle}" Click="UpdateNow_Click" />
+                                <Button Content="{x:Bind s:L.Z('更新说明','Release notes')}" Click="UpdateNotes_Click" />
+                                <Button Content="{x:Bind s:L.Z('跳过此版本','Skip this version')}" Click="UpdateSkip_Click" />
+                            </StackPanel>
+                        </StackPanel>
+                    </InfoBar.Content>
+                </InfoBar>
             </Grid>
         </NavigationView>
 

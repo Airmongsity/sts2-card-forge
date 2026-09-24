@@ -141,7 +141,7 @@ public static class Setup
     /// <summary>Optional prefix for GitHub downloads (a GitHub download proxy), e.g. "https://ghfast.top/".</summary>
     public static string GithubProxy => AppPaths.LoadSettings()["github_proxy"]?.GetValue<string>()?.Trim() ?? "";
 
-    static IEnumerable<string> GithubUrls(string url)
+    public static IEnumerable<string> GithubUrls(string url)
     {
         if (GithubProxy.Length == 0) return [url];
         var proxied = GithubProxy.TrimEnd('/') + "/" + url;

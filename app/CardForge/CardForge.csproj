@@ -16,7 +16,8 @@
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.0.0</Version>
+    <!-- one version for app, backend and release tag: the VERSION file at the repo root -->
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\..\VERSION').Trim())</Version>
     <Product>STS2 Card Forge</Product>
   </PropertyGroup>
   <ItemGroup>

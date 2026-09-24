@@ -127,6 +127,20 @@
                     <Button Content="{x:Bind s:L.Z('打开数据文件夹','Open data folder')}" Click="OpenData_Click" />
                 </StackPanel>
             </Border>
+
+            <!-- updates (stored by the app itself, applies immediately) -->
+            <TextBlock Text="{x:Bind s:L.Z('更新','Updates')}" Style="{StaticResource SectionHeader}" />
+            <Border Style="{StaticResource Panel}">
+                <StackPanel Spacing="10">
+                    <TextBlock x:Name="VersionText" />
+                    <ToggleSwitch x:Name="UpdateCheckSwitch" Toggled="UpdateCheckSwitch_Toggled"
+                                  Header="{x:Bind s:L.Z('启动时自动检查 GitHub 上的新版本','Check GitHub for a new version on startup')}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="CheckUpdateBtn" Content="{x:Bind s:L.Z('立即检查更新','Check for updates now')}" Click="CheckUpdate_Click" />
+                        <Button Content="{x:Bind s:L.Z('发布页','Releases page')}" Click="ReleasesPage_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 

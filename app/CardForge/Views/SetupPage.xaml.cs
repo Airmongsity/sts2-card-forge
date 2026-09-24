@@ -53,7 +53,8 @@ public sealed partial class SetupPage : Page
     void ShowWarnings()
     {
         var w = Gpu.Warnings(Gpu.Package);
-        GpuWarn.Message = string.Join("\n", w);
+        GpuWarn.Severity = w.Any(x => x.Severe) ? InfoBarSeverity.Error : InfoBarSeverity.Warning;
+        GpuWarn.Message = string.Join("\n", w.Select(x => x.Text));
         GpuWarn.IsOpen = w.Count > 0;
     }
 
@@ -96,8 +97,65 @@ public sealed partial class SetupPage : Page
         App.Main.MarkSetupDone(done);
     }
 
-    async Task RunSteps(IEnumerable<SetupStep> steps)
+    /// <summary>Before any big download: when this machine is unlikely to generate images (no suitable GPU, old driver,
+    /// too little RAM) or the disk is too small, say so and let the user decide, so nobody downloads ~14 GB for nothing.</summary>
+    async Task<bool> ConfirmMachine(List<SetupStep> steps)
     {
+        var todo = new List<SetupStep>();
+        foreach (var s in steps)
+            if (s.Id != "deps" && s.Id != "gputest" && !await s.Check()) todo.Add(s);
+        if (todo.Count == 0) return true;
+
+        long download = 0, disk = 0;
+        foreach (var s in todo)
+        {
+            var (d, k) = s.Id switch
+            {
+                "runtime" => (2_000_000_000L, 9_000_000_000L),   // ~2 GB archive, ~7 GB unpacked
+                "gguf" => (1_000_000L, 1_000_000L),
+                "unet" => (Setup.CurrentQuant.Size, Setup.CurrentQuant.Size),
+                "te" => (Setup.TextEncoder.Size, Setup.TextEncoder.Size),
+                "vae" => (Setup.Vae.Size, Setup.Vae.Size),
+                "lora" => (Setup.Lora.Size, Setup.Lora.Size),
+                _ => (0L, 0L),
+            };
+            download += d;
+            disk += k;
+        }
+
+        var problems = Gpu.Warnings(Gpu.Package).Where(w => w.Severe).Select(w => w.Text).ToList();
+        try
+        {
+            var free = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(AppPaths.Root))!).AvailableFreeSpace;
+            if (free < disk + 1_000_000_000L)
+                problems.Add(L.Z($"磁盘空间不足：需要约 {disk / 1e9:0} GB，所在磁盘只剩 {free / 1e9:0.#} GB。",
+                                 $"Not enough disk space: about {disk / 1e9:0} GB needed, {free / 1e9:0.#} GB free on this drive."));
+        }
+        catch { }
+        if (problems.Count == 0 || download < 50_000_000) return true;
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = L.Z("这台电脑可能无法正常出图", "This PC may not be able to generate images"),
+            Content = new TextBlock
+            {
+                TextWrapping = TextWrapping.Wrap,
+                Text = string.Join("\n", problems.Select(p => "• " + p)) + "\n\n" +
+                       L.Z($"接下来要下载约 {download / 1e9:0.#} GB。建议先解决上面的问题（或在“运行包”中改选）。确定仍要下载吗？",
+                           $"About {download / 1e9:0.#} GB would be downloaded next. Fix the issues above first (or pick another package). Download anyway?"),
+            },
+            PrimaryButtonText = L.Z("仍然下载", "Download anyway"),
+            CloseButtonText = L.Z("取消", "Cancel"),
+            DefaultButton = ContentDialogButton.Close,
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    async Task RunSteps(IEnumerable<SetupStep> stepsToRun)
+    {
+        var steps = stepsToRun.ToList();
+        if (!await ConfirmMachine(steps)) return;
         _cts = new CancellationTokenSource();
         InstallAll.IsEnabled = false;
         CancelBtn.IsEnabled = true;

@@ -30,7 +30,10 @@ from comfy import Comfy  # noqa: E402
 from thermal import Thermal  # noqa: E402
 from worker import Worker, make_jobs  # noqa: E402
 
-VERSION = "1.0.0"
+try:
+    VERSION = (config.ROOT / "VERSION").read_text(encoding="utf-8").strip()
+except OSError:
+    VERSION = "0.0.0"
 THUMBS = config.DATA / "thumbs"
 THUMBS.mkdir(exist_ok=True)
 

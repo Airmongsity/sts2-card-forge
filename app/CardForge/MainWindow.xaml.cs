@@ -66,7 +66,105 @@ public sealed partial class MainWindow : Window
         _timer.Start();
         await PollStatus();
         Navigate(allOk && Status != null ? "cards" : "setup");
+        if (Updater.AutoCheck) await CheckForUpdates(manual: false);
     }
+
+    // ---- updates ---------------------------------------------------------------------------------
+
+    UpdateInfo? _update;
+
+    /// <summary>Looks for a newer release. Quiet on startup (no errors, skipped versions stay hidden);
+    /// a manual check reports every outcome.</summary>
+    public async Task CheckForUpdates(bool manual)
+    {
+        try
+        {
+            var u = await Updater.Check();
+            if (u == null)
+            {
+                if (manual) ShowInfo(L.Z($"已是最新版本（{Updater.Current}）", $"You are on the latest version ({Updater.Current})"));
+                return;
+            }
+            if (!manual && Updater.Skipped == u.Tag) return;
+            _update = u;
+            UpdateBar.Severity = InfoBarSeverity.Informational;
+            UpdateBar.Title = L.Z($"新版本 {u.Tag} 可用", $"Version {u.Tag} is available");
+            UpdateBar.Message = L.Z($"当前 {Updater.Current}。", $"You have {Updater.Current}. ") +
+                (Updater.CanInstall ? L.Z("更新只替换程序文件，你的卡牌、图片、设置与模型都会保留。", "Updating replaces only the program files; your cards, images, settings and models are kept.")
+                                    : L.Z("这是源码目录，请用 git pull 或到发布页下载。", "This is a source checkout: git pull, or download from the releases page."));
+            UpdateNowBtn.Content = Updater.CanInstall ? L.Z("立即更新", "Update now") : L.Z("打开发布页", "Open releases page");
+            UpdateProgress.Visibility = Visibility.Collapsed;
+            UpdateButtons.Visibility = Visibility.Visible;
+            UpdateBar.IsOpen = true;
+        }
+        catch (Exception e)
+        {
+            if (manual) ShowError(L.Z("检查更新失败：", "Update check failed: ") + e.Message);
+        }
+    }
+
+    async void UpdateNow_Click(object sender, RoutedEventArgs e)
+    {
+        if (_update is not { } u) return;
+        if (!Updater.CanInstall)
+        {
+            OpenUrl(u.PageUrl);
+            return;
+        }
+        if (Status?.Worker is { } w && (w.Current != null || w.Queued > 0))
+        {
+            ShowError(L.Z("生成队列还有任务，请等它们完成（或暂停并清空）后再更新。", "The queue still has jobs; let them finish (or pause and clear it) before updating."));
+            return;
+        }
+
+        var progress = new SetupStep
+        {
+            Id = "update", Title = "", Description = "",
+            Check = () => Task.FromResult(false), Install = (_, _) => Task.CompletedTask,
+        };
+        progress.PropertyChanged += (_, _) =>
+        {
+            UpdateBar.Message = progress.Detail;
+            UpdateProgress.IsIndeterminate = progress.Indeterminate;
+            UpdateProgress.Value = progress.Progress;
+        };
+        UpdateButtons.Visibility = Visibility.Collapsed;
+        UpdateProgress.Visibility = Visibility.Visible;
+        UpdateProgress.IsIndeterminate = true;
+        UpdateBar.IsClosable = false;
+        try
+        {
+            var dir = await Task.Run(() => Updater.Download(u, progress, CancellationToken.None));
+            UpdateBar.Message = L.Z("正在安装，应用将自动重启…", "Installing; the app restarts by itself…");
+            Updater.Install(dir);
+            Close();   // Closed stops the backend; the update script waits for this process to exit
+        }
+        catch (Exception ex)
+        {
+            UpdateBar.Severity = InfoBarSeverity.Error;
+            UpdateBar.Message = L.Z("更新失败：", "Update failed: ") + ex.Message;
+            UpdateButtons.Visibility = Visibility.Visible;
+            UpdateProgress.Visibility = Visibility.Collapsed;
+        }
+        finally
+        {
+            UpdateBar.IsClosable = true;
+        }
+    }
+
+    void UpdateNotes_Click(object sender, RoutedEventArgs e)
+    {
+        if (_update != null) OpenUrl(_update.PageUrl);
+    }
+
+    void UpdateSkip_Click(object sender, RoutedEventArgs e)
+    {
+        if (_update != null) AppPaths.SaveSettings(s => s["update_skip"] = _update.Tag);
+        UpdateBar.IsOpen = false;
+    }
+
+    static void OpenUrl(string url) =>
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
 
     /// <summary>Called by the setup page once the runtime is in place.</summary>
     public async Task<bool> RestartBackend()

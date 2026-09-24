@@ -19,6 +19,12 @@ WinUI 3 desktop app + a small Python backend. UI in 简体中文 / English.
    Already have ComfyUI? Use *Use existing ComfyUI…*. Prefer a download manager? *Copy download links*.
 3. In **Settings → Prompt AI**, choose a provider, paste an API key and click *Test*.
 
+The download is small (the app only). Before fetching anything big, Setup checks the GPU, driver, RAM and free disk
+space and warns first if this PC is unlikely to generate images, so nobody downloads ~14 GB for nothing.
+
+**Updates**: on startup the app checks GitHub releases for a newer version (turn it off in **Settings → Updates**).
+*Update now* downloads the release, replaces only the program files (cards, images, settings and models stay) and restarts.
+
 ## Supported GPUs
 Setup detects the card and picks the matching ComfyUI package (override it under *Package*):
 
@@ -36,8 +42,7 @@ the package, wrong vendor). Overheat protection reads the temperature through `n
 ## Download sources
 *Download source* in Setup: **Auto** (by system region), **Global** or **Mainland China**. Every file has several sources
 and falls back automatically, in the chosen order:
-- Models: HuggingFace ⇄ ModelScope (identical files; the order follows the region) → hf-mirror.com. The style LoRA is only
-  on HuggingFace, but release zips bundle it. hf-mirror.com mirrors only metadata: large files still come from
+- Models: HuggingFace ⇄ ModelScope (identical files; the order follows the region) → hf-mirror.com. hf-mirror.com mirrors only metadata: large files still come from
   HuggingFace's CDN, so on its own it does not help when HuggingFace is unreachable.
 - Python packages: PyPI ⇄ Tsinghua / Aliyun mirrors.
 - ComfyUI and the GGUF node come from GitHub; set *GitHub proxy* (a download-proxy prefix) if GitHub is blocked, or
@@ -87,9 +92,7 @@ backend/            Python API (aiohttp) on ComfyUI's embedded Python, 127.0.0.1
   store.py          SQLite (cards, characters, images, jobs)   exporter.py   native-size export
   sts2.py           classes, sizes, style rules and caption examples learned while training the LoRA
 examples/           sample characters/cards/art seeded into the Examples project on first run (cards.json)
-assets/lora/        optional, not in the repo: drop the style LoRA here to bundle it into a release
-                    (otherwise Setup downloads it from HuggingFace: Airmongsity/Qwen-Image-2.1-Sts2-Cards-Drawer;
-                    Setup also tries ModelScope under the same repo name, so mirroring it there adds a China source)
+VERSION             the one version number (app, backend, release tag v<VERSION>)
 data/               runtime: settings.json, cardforge.db, images/, logs/ (created on first run)
 ```
 
@@ -97,7 +100,11 @@ data/               runtime: settings.json, cardforge.db, images/, logs/ (create
   A release folder next to or below an existing `ComfyUI_windows_portable` also finds and reuses it.
   The app finds the project root by walking up to `backend/server.py` and starts the backend with ComfyUI's Python.
 - Backend alone: `ComfyUI_windows_portable\python_embeded\python.exe backend\server.py`.
-- Release: `powershell -ExecutionPolicy Bypass -File build_release.ps1` → `dist\STS2CardForge.zip`.
+- Release: bump `VERSION`, run `powershell -ExecutionPolicy Bypass -File build_release.ps1` → `dist\STS2CardForge.zip`,
+  then publish a GitHub release tagged `v<VERSION>` with that zip attached. The zip holds only the app, backend and
+  examples (no models, no LoRA): Setup checks the machine first and downloads the rest only when it makes sense.
+  The style LoRA comes from HuggingFace `Airmongsity/Qwen-Image-2.1-Sts2-Cards-Drawer` (Setup also tries ModelScope under
+  the same repo name, so mirroring it there adds a China source).
 
 ## License
 
