@@ -497,6 +497,7 @@ public static class Setup
             var (code, output) = await Run(AppPaths.Python, args, AppPaths.ComfyRoot, line => step.Report(line), ct);
             if (code == 0) return;
             errors.Add($"[{index ?? "pypi.org"}] {Tail(output, 200)}");
+            Log($"pip [{index ?? "pypi.org"}] failed: {Tail(output, 400)}");
             step.Report(L.Z("换一个 PyPI 源重试…", "Retrying with another PyPI index…"));
         }
         throw new Exception("pip: " + string.Join("\n", errors));
@@ -515,11 +516,14 @@ public static class Setup
         {
             try
             {
+                Log($"GET {url}");
                 await DownloadFile(url, dst, size, sha256, step, ct);
+                Log($"OK  {Path.GetFileName(dst)} from {new Uri(url).Host}");
                 return;
             }
             catch (Exception e) when (!ct.IsCancellationRequested)
             {
+                Log($"ERR {new Uri(url).Host}: {e.GetType().Name}: {e.Message}{(e.InnerException != null ? " / " + e.InnerException.Message : "")}");
                 errors.Add($"{new Uri(url).Host}: {e.Message}");
                 step.Report(L.Z($"{new Uri(url).Host} 不可用，切换下一个下载源…", $"{new Uri(url).Host} failed, trying the next source…"));
             }
@@ -530,6 +534,30 @@ public static class Setup
     }
 
     static readonly TimeSpan StallTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>data/logs/setup.log: every download attempt and failure, for users to send when downloads fail.</summary>
+    public static string LogFile => Path.Combine(AppPaths.Logs, "setup.log");
+
+    public static void Log(string line)
+    {
+        try
+        {
+            Directory.CreateDirectory(AppPaths.Logs);
+            lock (LogFile) File.AppendAllText(LogFile, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {line}{Environment.NewLine}");
+        }
+        catch { }
+    }
+
+    // testing a restricted network on an unrestricted machine: CARDFORGE_BLOCK_HOSTS=huggingface.co,github.com sends
+    // requests for those hosts (and subdomains) to a black hole, so they hang like a DNS-poisoned or firewalled host
+    static readonly string[] SimulatedBlocked = (Environment.GetEnvironmentVariable("CARDFORGE_BLOCK_HOSTS") ?? "")
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    static string Simulate(string url)
+    {
+        var host = new Uri(url).Host;
+        return SimulatedBlocked.Any(b => host == b || host.EndsWith("." + b)) ? "http://10.255.255.1/" : url;
+    }
 
     /// <summary>Resumable download to "&lt;dst&gt;.part", SHA-256 verified, then renamed into place.
     /// size &lt;= 0 means unknown: the size is taken from the response. Gives up after 30 s without data.</summary>
@@ -546,7 +574,7 @@ public static class Setup
             stall.CancelAfter(StallTimeout);
             try
             {
-                var req = new HttpRequestMessage(HttpMethod.Get, url);
+                var req = new HttpRequestMessage(HttpMethod.Get, Simulate(url));
                 if (have > 0) req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(have, null);
                 using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, stall.Token);
                 if (resp.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable && size <= 0)

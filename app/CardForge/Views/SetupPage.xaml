@@ -59,6 +59,7 @@
                 <CheckBox x:Name="IncludeLora" IsChecked="True" Content="{x:Bind s:L.Z('包含风格 LoRA','Include the style LoRA')}" />
                 <Button Content="{x:Bind s:L.Z('复制下载链接','Copy download links')}" Click="CopyLinks_Click" />
                 <Button Content="{x:Bind s:L.Z('打开模型文件夹','Open models folder')}" Click="OpenModels_Click" />
+                <Button Content="{x:Bind s:L.Z('安装日志','Install log')}" Click="OpenLog_Click" />
             </StackPanel>
 
             <ItemsControl x:Name="StepsList">

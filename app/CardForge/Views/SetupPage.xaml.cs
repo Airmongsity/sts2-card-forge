@@ -156,6 +156,12 @@ public sealed partial class SetupPage : Page
     {
         var steps = stepsToRun.ToList();
         if (!await ConfirmMachine(steps)) return;
+        string proxy;
+        try { proxy = System.Net.WebRequest.DefaultWebProxy?.GetProxy(new Uri("https://huggingface.co"))?.ToString() ?? "none"; }
+        catch { proxy = "?"; }
+        Setup.Log($"==== install {string.Join(",", steps.Select(x => x.Id))} | app {Updater.Current} | {Environment.OSVersion} | " +
+                  $"{Gpu.Summary()} | package {Gpu.Package} | source {Setup.Source} (china={Setup.China}) | " +
+                  $"github proxy '{Setup.GithubProxy}' | system proxy {proxy} | root {AppPaths.Root}");
         _cts = new CancellationTokenSource();
         InstallAll.IsEnabled = false;
         CancelBtn.IsEnabled = true;
@@ -180,6 +186,7 @@ public sealed partial class SetupPage : Page
                 }
                 catch (Exception ex)
                 {
+                    Setup.Log($"step {step.Id} failed: {ex}");
                     step.State = StepState.Failed;
                     step.Detail = ex.Message;
                     if (step.Id == "runtime") break;   // everything else needs the runtime
@@ -276,6 +283,12 @@ public sealed partial class SetupPage : Page
         Clipboard.SetContent(dp);
         App.Main.ShowInfo(L.Z("已复制下载链接与目标路径。用下载工具下载后放到对应位置，再点“重新检查”。",
                               "Links and target paths copied. Download with any manager, place the files, then click Re-check."));
+    }
+
+    void OpenLog_Click(object sender, RoutedEventArgs e)
+    {
+        if (File.Exists(Setup.LogFile)) Process.Start("explorer.exe", $"/select,\"{Setup.LogFile}\"");
+        else App.Main.ShowInfo(L.Z("还没有安装日志", "No install log yet"));
     }
 
     void OpenModels_Click(object sender, RoutedEventArgs e)
