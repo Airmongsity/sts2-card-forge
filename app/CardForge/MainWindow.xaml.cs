@@ -224,7 +224,53 @@ public sealed partial class MainWindow : Window
             Status = null;
         }
         UpdateStatusBar();
+        UpdateCpuChip();
         StatusChanged?.Invoke(Status);
+    }
+
+    // ---- CPU mode: no usable GPU ------------------------------------------------------------------
+
+    void UpdateCpuChip()
+    {
+        bool cpu = Gpu.IsCpu;
+        CpuChip.Visibility = cpu ? Visibility.Visible : Visibility.Collapsed;
+        if (!cpu) return;
+        CpuChipText.Text = L.Z("CPU 模式（极慢）", "CPU mode (very slow)");
+        ToolTipService.SetToolTip(CpuChip, Gpu.CpuReason() + L.Z("可在“环境安装 → 运行包”中更改。", "Change it under Setup → Package."));
+    }
+
+    /// <summary>Before queueing images on a CPU-only setup: warn that each image takes hours (with "don't ask again").</summary>
+    public async Task<bool> ConfirmCpuGeneration()
+    {
+        if (!Gpu.IsCpu || AppPaths.LoadSettings()["cpu_warning_ack"]?.GetValue<bool>() == true) return true;
+        var dontAsk = new CheckBox { Content = L.Z("不再提示", "Don't ask again") };
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = Gpu.AutoPackage == "cpu" ? L.Z("没有可用的显卡，将用 CPU 生成", "No usable GPU: generating on the CPU")
+                                             : L.Z("将用 CPU 生成", "Generating on the CPU"),
+            Content = new StackPanel
+            {
+                Spacing = 12,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        TextWrapping = TextWrapping.Wrap,
+                        Text = Gpu.CpuReason() + "\n\n" + L.Z(
+                            "CPU 出图极慢：每张图可能需要数小时，期间 CPU 满载、电脑会明显变卡，笔记本请接通电源。建议先用“草图尺寸”和少量张数试试。",
+                            "CPU generation is extremely slow: each image can take hours, the CPU stays fully loaded and the PC gets sluggish; keep laptops plugged in. Try the draft size and few images first."),
+                    },
+                    dontAsk,
+                },
+            },
+            PrimaryButtonText = L.Z("仍然生成", "Generate anyway"),
+            CloseButtonText = L.Z("取消", "Cancel"),
+            DefaultButton = ContentDialogButton.Close,
+        };
+        var go = await dialog.ShowAsync() == ContentDialogResult.Primary;
+        if (go && dontAsk.IsChecked == true) AppPaths.SaveSettings(s => s["cpu_warning_ack"] = true);
+        return go;
     }
 
     static SolidColorBrush Brush(byte r, byte g, byte b) => new(ColorHelper.FromArgb(255, r, g, b));

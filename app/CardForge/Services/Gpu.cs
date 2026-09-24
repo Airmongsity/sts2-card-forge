@@ -170,7 +170,8 @@ public static class Gpu
             Add(false, "Intel 下无法读取 GPU 温度，过热保护不会生效。", "GPU temperature is not readable on Intel, so overheat protection is inactive.");
         }
         if (package == "cpu")
-            Add(true, "没有可用的显卡：只能以 CPU 模式运行，极慢（一张图可能要数小时）。", "No usable GPU: it can only run on the CPU, extremely slowly (hours per image).");
+            w.Add((CpuReason() + L.Z("将使用 CPU 运行：极慢（一张图可能要数小时），并占满 CPU。",
+                                     "It will run on the CPU: extremely slow (hours per image) and it keeps the CPU fully busy."), true));
         else if (i.VramMiB is < 5500)
             Add(false, "显存不足 6 GB：会自动使用最小的模型和最低性能档位，出图较慢。", "Less than 6 GB of VRAM: the smallest model and lowest profile are used; generation is slow.");
         if (RamMiB is > 0 and < 12000)
@@ -178,6 +179,24 @@ public static class Gpu
                       $"Only {RamMiB / 1024.0:0} GB of RAM: the models need about 12 GB (16 GB recommended); generation will likely fail.");
         return w;
     }
+
+    /// <summary>Why this machine ends up on the CPU: no GPU at all, or a GPU that PyTorch cannot use.</summary>
+    public static string CpuReason()
+    {
+        var i = Info;
+        if (AutoPackage != "cpu")
+            return L.Z($"已手动选择 CPU 运行包（显卡 {i.Name} 本可使用）。", $"The CPU package was chosen manually ({i.Name} could be used). ");
+        return i.Vendor switch
+        {
+            GpuVendor.None => L.Z("未检测到可用于出图的显卡。", "No GPU usable for generation was found. "),
+            GpuVendor.Nvidia => L.Z($"{i.Name} 太旧（sm_{i.ComputeCap * 10:0}），PyTorch 已不支持。", $"{i.Name} is too old (sm_{i.ComputeCap * 10:0}) for PyTorch. "),
+            GpuVendor.Amd => L.Z($"{i.Name} 不受 ROCm 支持（需 RX 6000 或更新）。", $"{i.Name} is not supported by ROCm (needs RX 6000 or newer). "),
+            GpuVendor.Intel => L.Z($"{i.Name} 是核显，性能不足（只支持 Intel Arc）。", $"{i.Name} is integrated graphics, too weak (only Intel Arc is supported). "),
+            _ => L.Z($"{i.Name} 不受支持。", $"{i.Name} is not supported. "),
+        };
+    }
+
+    public static bool IsCpu => Package == "cpu";
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     struct MemoryStatusEx

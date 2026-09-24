@@ -425,7 +425,7 @@ public sealed partial class CardsPage : Page
 
     async void Generate_Click(object sender, RoutedEventArgs e)
     {
-        if (_current == null) return;
+        if (_current == null || !await App.Main.ConfirmCpuGeneration()) return;
         await SaveCurrent(quiet: true);
         try
         {
@@ -555,7 +555,7 @@ public sealed partial class CardsPage : Page
 
     async void ImgRefine_Click(object sender, RoutedEventArgs e)
     {
-        if (_menuImage == null) return;
+        if (_menuImage == null || !await App.Main.ConfirmCpuGeneration()) return;
         try
         {
             await Api.Post($"/api/images/{_menuImage.Id}/refine", new { denoise = DenoiseBox.Value });
@@ -708,6 +708,7 @@ public sealed partial class CardsPage : Page
 
     async Task QueueProject(bool onlyMissing)
     {
+        if (!await App.Main.ConfirmCpuGeneration()) return;
         await SaveCurrent(quiet: true);
         try
         {

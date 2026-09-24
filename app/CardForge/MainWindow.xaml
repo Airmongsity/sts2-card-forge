@@ -80,6 +80,12 @@
                         <TextBlock x:Name="TempChipText" Style="{StaticResource CaptionTextBlockStyle}" />
                     </StackPanel>
                 </Border>
+                <Border x:Name="CpuChip" CornerRadius="9" Padding="8,1" Visibility="Collapsed" Background="#40E6A23C">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE7BA;" FontSize="11" Foreground="#FFE6A23C" />
+                        <TextBlock x:Name="CpuChipText" Style="{StaticResource CaptionTextBlockStyle}" />
+                    </StackPanel>
+                </Border>
                 <TextBlock x:Name="WorkerText" Style="{StaticResource CaptionTextBlockStyle}" />
                 <ProgressBar x:Name="WorkerBar" Width="160" VerticalAlignment="Center" Visibility="Collapsed" />
             </StackPanel>
