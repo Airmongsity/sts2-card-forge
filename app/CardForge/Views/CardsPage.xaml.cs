@@ -26,9 +26,13 @@ public sealed partial class CardsPage : Page
     HashSet<int> _activeJobs = new();
     bool _loadingEditor;
 
-    static string NoLora => L.Z("（不使用 LoRA）", "(no LoRA)");
+    static string NoLora => L.Z("不使用 LoRA", "No LoRA");
 
     readonly MenuFlyout _imageMenu;
+    MenuFlyoutItem? _finalItem;
+    // "reuse seed" on an image that was item N of a batch: that seed only re-draws it together with N
+    long? _seedIndexSeed;
+    int? _seedIndex;
 
     public CardsPage()
     {
@@ -182,7 +186,11 @@ public sealed partial class CardsPage : Page
 
         SizeBox.SelectedValue = Param("size_preset")?.GetValue<string>() ?? "sts2_card";
         VariantsBox.Value = Num(Param("variants"), 2);
+        DraftCountBox.Value = Num(Param("draft_count"), 4);
+        DraftFastBox.IsChecked = Param("draft_easycache")?.GetValue<bool>() ?? true;
         SeedBox.Text = card.Params["seed"]?.ToString() ?? "";
+        _seedIndex = card.Params["seed_index"] is JsonNode si && int.TryParse(si.ToString(), out var sIdx) ? sIdx : null;
+        _seedIndexSeed = _seedIndex != null && long.TryParse(SeedBox.Text, out var sSeed) ? sSeed : null;
         var lora = Param("lora")?.GetValue<string>() ?? "";
         LoraBox.SelectedItem = string.IsNullOrEmpty(lora) ? NoLora : lora;
         if (LoraBox.SelectedItem == null && lora.Length > 0)
@@ -232,6 +240,8 @@ public sealed partial class CardsPage : Page
         }
         Keep("size_preset", SizeBox.SelectedValue as string);
         Keep("variants", (int)VariantsBox.Value);
+        Keep("draft_count", (int)DraftCountBox.Value);
+        Keep("draft_easycache", DraftFastBox.IsChecked == true);
         var lora = LoraBox.SelectedItem as string;
         Keep("lora", lora == NoLora ? "" : lora);
         Keep("lora_strength", Math.Round(StrengthBox.Value, 3));
@@ -240,7 +250,11 @@ public sealed partial class CardsPage : Page
         Keep("denoise", Math.Round(DenoiseBox.Value, 2));
         Keep("style_suffix", SuffixBox.Text.Trim());
         if (!_inheritTheme) p["theme_colors"] = new JsonArray(_themes.Where(IsHex).Select(h => (JsonNode)JsonValue.Create(h)).ToArray());
-        if (long.TryParse(SeedBox.Text.Trim(), out var seed)) p["seed"] = seed;
+        if (long.TryParse(SeedBox.Text.Trim(), out var seed))
+        {
+            p["seed"] = seed;
+            if (_seedIndex != null && seed == _seedIndexSeed) p["seed_index"] = _seedIndex;
+        }
         if (!_inheritRef) p["refs"] = RefBox.Text.Length > 0 ? new JsonArray(RefBox.Text) : new JsonArray();
         if (InitBox.Text.Length > 0) p["init"] = InitBox.Text;
         c.Params = p;
@@ -275,7 +289,7 @@ public sealed partial class CardsPage : Page
     {
         var trigger = ClassBox.SelectedValue as string ?? "my_hero";
         PromptBox.PlaceholderText = $"sts2 card art, {trigger} card. " +
-                                    L.Z("（描述画面内容与配色，或点上方“AI 生成提示词”）", "(describe the subject and colours, or click Generate prompt with AI)");
+                                    L.Z("描述画面内容与配色，或点上方“AI 生成提示词”", "Describe the subject and colours, or click Generate prompt with AI");
     }
 
     bool _inheritRef = true;
@@ -288,7 +302,7 @@ public sealed partial class CardsPage : Page
     {
         var prompt = PromptBox.Text.Trim();
         var suffix = SuffixBox.Text.Trim();
-        FinalPromptText.Text = prompt.Length == 0 ? L.Z("（先写提示词或点“AI 生成提示词”）", "(write a prompt or click Generate prompt with AI)")
+        FinalPromptText.Text = prompt.Length == 0 ? L.Z("先写提示词或点“AI 生成提示词”", "Write a prompt or click Generate prompt with AI")
                              : suffix.Length == 0 || prompt.Contains(suffix) ? prompt : $"{prompt} {suffix}";
     }
 
@@ -480,6 +494,20 @@ public sealed partial class CardsPage : Page
         }
     }
 
+    async void Draft_Click(object sender, RoutedEventArgs e)
+    {
+        if (_current == null || !await App.Main.ConfirmCpuGeneration()) return;
+        await SaveCurrent(quiet: true);
+        try
+        {
+            var res = await Api.Post("/api/jobs", new { card_id = _current.Id, mode = "draft" });
+            var n = (int)DraftCountBox.Value;
+            CardJobText.Text = L.Z($"已加入队列：{n} 张草图", $"Queued {n} drafts");
+            _current.Pending += res["jobs"]!.AsArray().Count;
+        }
+        catch (Exception ex) { App.Main.ShowError(ex.Message); }
+    }
+
     async void Generate_Click(object sender, RoutedEventArgs e)
     {
         if (_current == null || !await App.Main.ConfirmCpuGeneration()) return;
@@ -542,11 +570,11 @@ public sealed partial class CardsPage : Page
         AbortBtn.Visibility = running != null ? Visibility.Visible : Visibility.Collapsed;
         UpdateAbortOverlay();
         CardProgress.Visibility = mine.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        CardProgress.IsIndeterminate = running == null;
+        CardProgress.IsIndeterminate = running == null || running.Loading;
         if (running != null) CardProgress.Value = running.Percent;
         CardJobText.Text = mine.Count == 0 ? "" :
             running != null ? $"{running.Message}" + (mine.Count > 1 ? L.Z($"  ·  还有 {mine.Count - 1} 张排队", $"  ·  {mine.Count - 1} more queued") : "")
-                            : L.Z($"排队中：{mine.Count} 张", $"{mine.Count} queued") + (jobs.Worker.CooldownLeft > 0 ? L.Z($"（GPU 冷却 {jobs.Worker.CooldownLeft}s）", $" (GPU cooldown {jobs.Worker.CooldownLeft}s)") : "");
+                            : L.Z($"排队中：{mine.Count} 张", $"{mine.Count} queued") + (jobs.Worker.CooldownLeft > 0 ? L.Z($"  ·  GPU 冷却 {jobs.Worker.CooldownLeft}s", $"  ·  GPU cooldown {jobs.Worker.CooldownLeft}s") : "");
 
         if (running != null)
         {
@@ -593,7 +621,15 @@ public sealed partial class CardsPage : Page
 
     async void VariantGrid_ItemClick(object sender, ItemClickEventArgs e)
     {
-        if (e.ClickedItem is ImageRec img) await SelectArt(img);
+        if (e.ClickedItem is not ImageRec img) return;
+        if (img.IsDraft)
+        {
+            ArtImage.Source = img.Full;
+            ArtHint.Visibility = Visibility.Collapsed;
+            CardJobText.Text = L.Z("草图预览：右键选“精绘”接着画完", "Draft preview: right-click and choose Paint final to finish it");
+            return;
+        }
+        await SelectArt(img);
     }
 
     async Task SelectArt(ImageRec img)
@@ -613,6 +649,7 @@ public sealed partial class CardsPage : Page
     {
         var el = (FrameworkElement)sender;
         _menuImage = el.DataContext as ImageRec;
+        if (_finalItem != null) _finalItem.Visibility = _menuImage?.IsDraft == true ? Visibility.Visible : Visibility.Collapsed;
         _imageMenu.ShowAt(el, e.GetPosition(el));
     }
 
@@ -625,8 +662,10 @@ public sealed partial class CardsPage : Page
             item.Click += click;
             menu.Items.Add(item);
         }
+        Add("精绘", "Paint final", Symbol.Highlight, ImgFinal_Click);
+        _finalItem = (MenuFlyoutItem)menu.Items[^1];
         Add("设为卡图", "Use as card art", Symbol.Accept, ImgSelect_Click);
-        Add("精修（img2img 放大重绘）", "Refine (img2img at full size)", Symbol.Refresh, ImgRefine_Click);
+        Add("img2img 精修", "Refine with img2img", Symbol.Refresh, ImgRefine_Click);
         Add("复用种子", "Reuse seed", Symbol.Repair, ImgSeed_Click);
         Add("作为参考图", "Use as reference image", Symbol.Pictures, ImgRef_Click);
         Add("作为起始图 (img2img)", "Use as img2img start", Symbol.Edit, ImgInit_Click);
@@ -641,6 +680,18 @@ public sealed partial class CardsPage : Page
 
     async void ImgSelect_Click(object sender, RoutedEventArgs e) { if (_menuImage != null) await SelectArt(_menuImage); }
 
+    async void ImgFinal_Click(object sender, RoutedEventArgs e)
+    {
+        if (_menuImage == null || !await App.Main.ConfirmCpuGeneration()) return;
+        try
+        {
+            await Api.Post($"/api/images/{_menuImage.Id}/final", new { });
+            CardJobText.Text = L.Z("已加入精绘队列", "Final queued");
+            if (_current != null) _current.Pending += 1;
+        }
+        catch (Exception ex) { App.Main.ShowError(ex.Message); }
+    }
+
     async void ImgRefine_Click(object sender, RoutedEventArgs e)
     {
         if (_menuImage == null || !await App.Main.ConfirmCpuGeneration()) return;
@@ -652,7 +703,14 @@ public sealed partial class CardsPage : Page
         catch (Exception ex) { App.Main.ShowError(ex.Message); }
     }
 
-    void ImgSeed_Click(object sender, RoutedEventArgs e) { if (_menuImage != null) { SeedBox.Text = _menuImage.Seed.ToString(); VariantsBox.Value = 1; ParamsExpander.IsExpanded = true; } }
+    void ImgSeed_Click(object sender, RoutedEventArgs e)
+    {
+        if (_menuImage == null) return;
+        SeedBox.Text = _menuImage.Seed.ToString();
+        (_seedIndexSeed, _seedIndex) = (_menuImage.Seed, _menuImage.BatchIndex);
+        VariantsBox.Value = 1;
+        ParamsExpander.IsExpanded = true;
+    }
     void ImgRef_Click(object sender, RoutedEventArgs e) { if (_menuImage != null) { RefBox.Text = _menuImage.Path; _inheritRef = false; ParamsExpander.IsExpanded = true; } }
     void ImgInit_Click(object sender, RoutedEventArgs e) { if (_menuImage != null) { InitBox.Text = _menuImage.Path; ParamsExpander.IsExpanded = true; } }
 

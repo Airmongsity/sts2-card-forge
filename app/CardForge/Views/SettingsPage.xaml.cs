@@ -50,6 +50,14 @@ public sealed partial class SettingsPage : Page
         new() { Id = "en-US", Name = "English" },
     ];
 
+    static readonly Option[] PromptLangs =
+    [
+        new() { Id = "auto", Name = L.Z("跟随界面语言", "Same as the UI") },
+        new() { Id = "zh", Name = "简体中文" },
+        new() { Id = "en", Name = "English" },
+        new() { Id = "ja", Name = "日本語" },
+    ];
+
     static readonly Option[] CardLangs =
     [
         new() { Id = "zh", Name = "简体中文" },
@@ -57,7 +65,7 @@ public sealed partial class SettingsPage : Page
         new() { Id = "ja", Name = "日本語" },
     ];
 
-    static string NoLora => L.Z("（不使用 LoRA）", "(no LoRA)");
+    static string NoLora => L.Z("不使用 LoRA", "No LoRA");
     JsonObject _s = new();
     bool _loading;
     string _savedPatch = "";
@@ -75,7 +83,8 @@ public sealed partial class SettingsPage : Page
         PreviewBox.ItemsSource = PreviewModes;
         UiLangBox.ItemsSource = UiLangs;
         CardLangBox.ItemsSource = CardLangs;
-        UiLangBox.DisplayMemberPath = CardLangBox.DisplayMemberPath = "Name";
+        PromptLangBox.ItemsSource = PromptLangs;
+        UiLangBox.DisplayMemberPath = CardLangBox.DisplayMemberPath = PromptLangBox.DisplayMemberPath = "Name";
         // the save bar follows the form: compare the current form with what was last loaded/saved
         _dirtyTimer.Tick += (_, _) => SaveBar.Visibility = Dirty ? Visibility.Visible : Visibility.Collapsed;
         _toastTimer.Tick += (_, _) => { _toastTimer.Stop(); SavedToast.Visibility = Visibility.Collapsed; };
@@ -133,6 +142,7 @@ public sealed partial class SettingsPage : Page
 
         UiLangBox.SelectedItem = UiLangs.FirstOrDefault(o => o.Id == Str(_s["ui_language"])) ?? UiLangs[0];
         CardLangBox.SelectedItem = CardLangs.FirstOrDefault(o => o.Id == Str(_s["card_language"], "zh")) ?? CardLangs[0];
+        PromptLangBox.SelectedItem = PromptLangs.FirstOrDefault(o => o.Id == Str(_s["prompt_language"], "auto")) ?? PromptLangs[0];
 
         var provider = Str(_s["llm_provider"], "anthropic");
         var preset = Presets.FirstOrDefault(p => p.Id == Str(_s["llm_preset"]) && p.Provider == provider) ??
@@ -205,6 +215,7 @@ public sealed partial class SettingsPage : Page
         {
             ["ui_language"] = ((Option)UiLangBox.SelectedItem).Id,
             ["card_language"] = ((Option)CardLangBox.SelectedItem).Id,
+            ["prompt_language"] = ((Option)PromptLangBox.SelectedItem).Id,
             ["llm_preset"] = p.Id,
             ["llm_provider"] = p.Provider,
             ["comfy_profile"] = ((Option)ProfileBox.SelectedItem).Id,

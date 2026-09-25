@@ -48,7 +48,9 @@ IDEAS_SCHEMA = {
 
 
 def _art_system(lang, settings):
+    import config
     text = (settings.get("prompt_system") or sts2.DEFAULT_PROMPT_SYSTEM).replace("{lang}", LANG_NAMES.get(lang, "English"))
+    text = text.replace("{prompt_lang}", LANG_NAMES.get(config.prompt_lang(settings), "English"))
     return text + '\n\nReply with JSON: "prompt" (the prompt) and "notes" (the one-line explanation).'
 
 

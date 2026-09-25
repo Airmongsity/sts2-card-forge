@@ -141,11 +141,11 @@ def projects():
 
 # ---- images ----------------------------------------------------------------------------------
 
-def add_image(card_id, path, width, height, seed, prompt, params):
+def add_image(card_id, path, width, height, seed, prompt, params, auto_select=True):
     cur = _q("INSERT INTO images (card_id, path, width, height, seed, prompt, params, created) VALUES (?,?,?,?,?,?,?,?)",
              (card_id, str(path), width, height, seed, prompt, json.dumps(params, ensure_ascii=False), time.time()))
     iid = cur.lastrowid
-    if card_id is not None:
+    if card_id is not None and auto_select:
         _q("UPDATE cards SET selected_image = ? WHERE id = ? AND selected_image IS NULL", (iid, card_id))
     return get_image(iid)
 

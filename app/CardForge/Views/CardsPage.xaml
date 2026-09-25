@@ -21,7 +21,7 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <ComboBox x:Name="ProjectBox" IsEditable="True" HorizontalAlignment="Stretch"
-                      Header="{x:Bind s:L.Z('项目（MOD）','Project (mod)')}"
+                      Header="{x:Bind s:L.Z('项目','Project')}"
                       SelectionChanged="ProjectBox_SelectionChanged" TextSubmitted="ProjectBox_TextSubmitted" />
             <TextBox x:Name="SearchBox" Grid.Row="1" PlaceholderText="{x:Bind s:L.Z('搜索卡牌…','Search cards…')}" TextChanged="SearchBox_TextChanged" />
             <ListView x:Name="CardList" Grid.Row="2" SelectionMode="Single" SelectionChanged="CardList_SelectionChanged">
@@ -71,7 +71,7 @@
                         </MenuFlyout>
                     </DropDownButton.Flyout>
                 </DropDownButton>
-                <Button Click="DeleteCard_Click" ToolTipService.ToolTip="{x:Bind s:L.Z('删除卡牌（图片保留在图库）','Delete card (images stay in the gallery)')}">
+                <Button Click="DeleteCard_Click" ToolTipService.ToolTip="{x:Bind s:L.Z('删除卡牌','Delete card')}">
                     <SymbolIcon Symbol="Delete" />
                 </Button>
             </StackPanel>
@@ -80,7 +80,7 @@
         <!-- ============ editor ============ -->
         <Grid Grid.Column="1">
             <TextBlock x:Name="EmptyHint" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource Hint}" TextAlignment="Center"
-                       Text="{x:Bind s:L.Z('先在“MOD 角色”页创建你的角色，再新建卡牌或用“AI 构思”批量生成卡牌创意。“示例 Examples”项目里有几张现成的示例卡。','Create your character on the Characters page first, then add cards or brainstorm a batch with AI ideas. The Examples project has a few finished sample cards.')}" />
+                       Text="{x:Bind s:L.Z('先在“角色”页创建你的角色，再新建卡牌或用“AI 构思”批量生成卡牌创意。“示例 Examples”项目里有几张现成的示例卡。','Create your character on the Characters page first, then add cards or brainstorm a batch with AI ideas. The Examples project has a few finished sample cards.')}" />
             <ScrollViewer x:Name="Editor" Visibility="Collapsed">
                 <StackPanel Padding="20,12,20,24" Spacing="10">
                     <Grid ColumnSpacing="10" RowSpacing="10">
@@ -93,7 +93,7 @@
                             <RowDefinition /><RowDefinition />
                         </Grid.RowDefinitions>
                         <TextBox x:Name="NameBox" Header="{x:Bind s:L.Z('卡牌名','Card name')}" />
-                        <TextBox x:Name="SlugBox" Grid.Column="1" Header="{x:Bind s:L.Z('导出文件名 (id)','Export file name (id)')}"
+                        <TextBox x:Name="SlugBox" Grid.Column="1" Header="{x:Bind s:L.Z('导出文件名','Export file name')}"
                                  PlaceholderText="sleeve_blade" />
                         <TextBox x:Name="CostBox" Grid.Column="2" Header="{x:Bind s:L.Z('费用','Cost')}" />
                         <ComboBox x:Name="ClassBox" Grid.Row="1" Header="{x:Bind s:L.Z('角色','Character')}" SelectionChanged="ClassBox_SelectionChanged" HorizontalAlignment="Stretch" DisplayMemberPath="Name" SelectedValuePath="Id" />
@@ -109,16 +109,16 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBox x:Name="RefBox" Header="{x:Bind s:L.Z('参考图（默认取角色参考图；清空后 AI 不引用；出图约慢 70%）','Reference image (character default; clear = AI will not refer to it; ~70% slower)')}" IsReadOnly="True" />
+                        <TextBox x:Name="RefBox" Header="{x:Bind s:L.Z('参考图','Reference image')}" IsReadOnly="True" />
                         <Button Grid.Column="1" VerticalAlignment="Bottom" Content="…" Click="PickRef_Click" />
                         <Button Grid.Column="2" VerticalAlignment="Bottom" Click="ClearRef_Click" ToolTipService.ToolTip="{x:Bind s:L.Z('此卡不用参考图','No reference for this card')}" AutomationProperties.Name="{x:Bind s:L.Z('此卡不用参考图','No reference for this card')}"><SymbolIcon Symbol="Clear" /></Button>
                         <Button Grid.Column="3" VerticalAlignment="Bottom" Click="InheritRef_Click" ToolTipService.ToolTip="{x:Bind s:L.Z('恢复为角色参考图','Use the character reference')}" AutomationProperties.Name="{x:Bind s:L.Z('恢复为角色参考图','Use the character reference')}"><SymbolIcon Symbol="Contact" /></Button>
                     </Grid>
 
                     <StackPanel Spacing="4">
-                        <TextBlock Text="{x:Bind s:L.Z('主题色（默认为角色颜色；决定这张卡的光效与背景配色）','Theme colours (default to the character colour; set the light and background of this card)')}" />
+                        <TextBlock Text="{x:Bind s:L.Z('主题色','Theme colours')}" />
                         <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
-                                   Text="{x:Bind s:L.Z('可添加多个颜色：第一个为主色（多用于背景与暗部），其余为点缀色（发光的物品、光效与特效）。','Add more colours if needed: the first one dominates (mostly background and shadows), the others are accents (glowing objects, light and effects).')}" />
+                                   Text="{x:Bind s:L.Z('第一个颜色是背景与暗部的主色，其余是光效的点缀色。','The first colour sets the background and shadows; the others are accents for light and effects.')}" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <StackPanel x:Name="ThemeColors" Orientation="Horizontal" Spacing="12" />
                             <Button x:Name="AddThemeBtn" Click="AddTheme_Click" ToolTipService.ToolTip="{x:Bind s:L.Z('添加颜色','Add a colour')}" AutomationProperties.Name="{x:Bind s:L.Z('添加颜色','Add a colour')}">
@@ -151,7 +151,7 @@
                     <Border Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="12,8">
                         <StackPanel Spacing="4">
-                            <TextBlock Style="{StaticResource Hint}" Text="{x:Bind s:L.Z('实际发送给模型的完整提示词（提示词 + 风格后缀）','Full prompt sent to the model (prompt + style suffix)')}" />
+                            <TextBlock Style="{StaticResource Hint}" Text="{x:Bind s:L.Z('完整提示词','Full prompt')}" />
                             <TextBlock x:Name="FinalPromptText" TextWrapping="Wrap" IsTextSelectionEnabled="True" FontSize="12" />
                         </StackPanel>
                     </Border>
@@ -166,41 +166,52 @@
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions>
-                                    <RowDefinition /><RowDefinition /><RowDefinition />
+                                    <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
                                 </Grid.RowDefinitions>
                                 <ComboBox x:Name="SizeBox" Header="{x:Bind s:L.Z('尺寸','Size')}" HorizontalAlignment="Stretch" DisplayMemberPath="Name" SelectedValuePath="Id" />
                                 <NumberBox x:Name="VariantsBox" Grid.Column="1" Header="{x:Bind s:L.Z('张数','Images')}" Minimum="1" Maximum="16" SpinButtonPlacementMode="Compact" />
-                                <TextBox x:Name="SeedBox" Grid.Column="2" Header="{x:Bind s:L.Z('种子（空=随机）','Seed (blank = random)')}" />
+                                <TextBox x:Name="SeedBox" Grid.Column="2" Header="{x:Bind s:L.Z('种子','Seed')}" />
                                 <ComboBox x:Name="LoraBox" Grid.Row="1" Header="LoRA" HorizontalAlignment="Stretch" />
                                 <NumberBox x:Name="StrengthBox" Grid.Row="1" Grid.Column="1" Header="{x:Bind s:L.Z('LoRA 强度','LoRA strength')}" Minimum="0" Maximum="2" SmallChange="0.05" SpinButtonPlacementMode="Compact" />
                                 <NumberBox x:Name="CfgBox" Grid.Row="1" Grid.Column="2" Header="CFG" Minimum="1" Maximum="10" SmallChange="0.5" SpinButtonPlacementMode="Compact" />
                                 <NumberBox x:Name="StepsBox" Grid.Row="2" Header="{x:Bind s:L.Z('步数','Steps')}" Minimum="8" Maximum="60" SpinButtonPlacementMode="Compact" />
-                                <NumberBox x:Name="DenoiseBox" Grid.Row="2" Grid.Column="1" Header="{x:Bind s:L.Z('重绘幅度 (img2img)','Denoise (img2img)')}" Minimum="0.1" Maximum="1" SmallChange="0.05" SpinButtonPlacementMode="Compact" />
+                                <NumberBox x:Name="DenoiseBox" Grid.Row="2" Grid.Column="1" Header="{x:Bind s:L.Z('重绘幅度','Denoise')}" Minimum="0.1" Maximum="1" SmallChange="0.05" SpinButtonPlacementMode="Compact" />
+                                <NumberBox x:Name="DraftCountBox" Grid.Row="2" Grid.Column="2" Header="{x:Bind s:L.Z('草图张数','Drafts per run')}" Minimum="1" Maximum="8" SpinButtonPlacementMode="Compact" />
+                                <CheckBox x:Name="DraftFastBox" Grid.Row="3" Grid.ColumnSpan="3"
+                                          Content="{x:Bind s:L.Z('草图加速','Fast drafts')}"
+                                          ToolTipService.ToolTip="{x:Bind s:L.Z('EasyCache：草图约快一倍，细节更糊，构图不变','EasyCache: drafts about 2x faster, blurrier details, same composition')}" />
                             </Grid>
-                            <TextBox x:Name="SuffixBox" TextChanged="PromptParts_TextChanged" Header="{x:Bind s:L.Z('风格后缀（正面，生成时自动接在提示词后）','Style suffix (positive, appended to the prompt when generating)')}" AcceptsReturn="True" TextWrapping="Wrap" />
+                            <TextBox x:Name="SuffixBox" TextChanged="PromptParts_TextChanged" Header="{x:Bind s:L.Z('风格后缀','Style suffix')}" AcceptsReturn="True" TextWrapping="Wrap" />
                             <TextBox x:Name="NegativeBox" Header="{x:Bind s:L.Z('负面提示词','Negative prompt')}" AcceptsReturn="True" TextWrapping="Wrap" />
                             <Grid ColumnSpacing="8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBox x:Name="InitBox" Header="{x:Bind s:L.Z('起始图（img2img，保留构图，可选）','Start image (img2img, keeps composition, optional)')}" IsReadOnly="True" />
+                                <TextBox x:Name="InitBox" Header="{x:Bind s:L.Z('起始图','Start image')}" IsReadOnly="True" />
                                 <Button Grid.Column="1" VerticalAlignment="Bottom" Content="…" Click="PickInit_Click" />
                                 <Button Grid.Column="2" VerticalAlignment="Bottom" Click="ClearInit_Click"><SymbolIcon Symbol="Clear" /></Button>
                             </Grid>
                             <TextBlock Style="{StaticResource Hint}"
-                                       Text="{x:Bind s:L.Z('提示：CFG 3.0 + 负面提示词是画质关键；写具体细节词（崩口的金属刃、飞溅的石屑），空泛词（高细节、杰作）无效。','Tip: CFG 3.0 plus a negative prompt matter most; concrete detail words work, vague ones like highly detailed do nothing.')}" />
+                                       Text="{x:Bind s:L.Z('CFG 3.0 与负面提示词最影响画质；写具体的细节，空泛的形容词没有用。','CFG 3.0 and the negative prompt matter most; concrete details work, vague adjectives do nothing.')}" />
                         </StackPanel>
                     </Expander>
 
                     <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,6,0,0">
-                        <Button x:Name="GenerateBtn" Style="{StaticResource AccentButtonStyle}" Click="Generate_Click">
+                        <Button x:Name="DraftBtn" Style="{StaticResource AccentButtonStyle}" Click="Draft_Click"
+                                ToolTipService.ToolTip="{x:Bind s:L.Z('快速画出几张草图：每张是成品的前几步，画面模糊，但构图、颜色和光影就是成品的样子。挑中一张后右键选“精绘”，从它接着画完。','Quickly draws several drafts: each is the first steps of its final image, blurry but with the final composition, colours and light. Right-click the one you like and choose Paint final to finish it.')}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <SymbolIcon Symbol="ViewAll" />
+                                <TextBlock Text="{x:Bind s:L.Z('抽草图','Draw drafts')}" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="GenerateBtn" Click="Generate_Click">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <SymbolIcon Symbol="Play" />
                                 <TextBlock Text="{x:Bind s:L.Z('生成卡图','Generate art')}" />
                             </StackPanel>
                         </Button>
                         <Button x:Name="AbortBtn" Click="Abort_Click" Visibility="Collapsed"
-                                ToolTipService.ToolTip="{x:Bind s:L.Z('中止正在绘制的这张图（队列中的其余图片照常生成）','Stop the image being drawn (the rest of the queue carries on)')}">
+                                ToolTipService.ToolTip="{x:Bind s:L.Z('中止正在绘制的这张图','Stop the image being drawn')}">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <SymbolIcon Symbol="Stop" />
                                 <TextBlock Text="{x:Bind s:L.Z('中止此张','Stop this image')}" />
@@ -229,10 +240,10 @@
                                Text="{x:Bind s:L.Z('还没有卡图','No art yet')}" />
                     <Button x:Name="AbortOverlay" Visibility="Collapsed" Click="Abort_Click" Style="{StaticResource AccentButtonStyle}"
                             HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10"
-                            ToolTipService.ToolTip="{x:Bind s:L.Z('中止正在绘制的这张图（队列中的其余图片照常生成）','Stop the image being drawn (the rest of the queue carries on)')}">
+                            ToolTipService.ToolTip="{x:Bind s:L.Z('中止正在绘制的这张图','Stop the image being drawn')}">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <SymbolIcon Symbol="Stop" />
-                            <TextBlock Text="{x:Bind s:L.Z('中止此张','Stop this image')}" />
+                            <TextBlock Text="{x:Bind s:L.Z('中止','Stop this image')}" />
                         </StackPanel>
                     </Button>
                 </Grid>
@@ -242,7 +253,7 @@
                 <TextBlock x:Name="CardJobText" Style="{StaticResource Hint}" />
             </StackPanel>
             <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="{x:Bind s:L.Z('候选图（右键更多操作）','Variants (right-click for more)')}" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                <TextBlock Text="{x:Bind s:L.Z('候选图','Variants')}" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                 <Button Click="ExportCard_Click" Content="{x:Bind s:L.Z('导出卡图…','Export art…')}" />
             </StackPanel>
             <GridView x:Name="VariantGrid" Grid.Row="3" SelectionMode="None" IsItemClickEnabled="True" ItemClick="VariantGrid_ItemClick">
@@ -251,6 +262,10 @@
                         <Grid Width="184" Height="138" CornerRadius="6" RightTapped="Variant_RightTapped" Background="{ThemeResource ControlFillColorDefaultBrush}">
                             <Image Source="{x:Bind Thumb}" Stretch="UniformToFill" />
                             <TextBlock Text="{x:Bind FavGlyph, Mode=OneWay}" Foreground="Gold" Margin="6,2" FontSize="16" />
+                            <Border Visibility="{x:Bind DraftBadge}" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="6"
+                                    Padding="6,1" CornerRadius="4" Background="#B0000000">
+                                <TextBlock Text="{x:Bind s:L.Z('草图','Draft')}" Foreground="White" FontSize="12" />
+                            </Border>
                         </Grid>
                     </DataTemplate>
                 </GridView.ItemTemplate>
@@ -294,13 +309,13 @@
             <StackPanel Spacing="10" Width="560">
                 <Grid ColumnSpacing="8">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                    <TextBox x:Name="ExportDirBox" Header="{x:Bind s:L.Z('目标文件夹（如 MOD 的卡图目录）','Target folder (e.g. the mod card art folder)')}" />
+                    <TextBox x:Name="ExportDirBox" Header="{x:Bind s:L.Z('目标文件夹','Target folder')}" />
                     <Button Grid.Column="1" VerticalAlignment="Bottom" Content="…" Click="PickExportDir_Click" />
                 </Grid>
                 <ComboBox x:Name="ExportSizeBox" Header="{x:Bind s:L.Z('尺寸','Size')}" HorizontalAlignment="Stretch" DisplayMemberPath="Name" SelectedValuePath="Id" />
-                <CheckBox x:Name="ExportByClass" Content="{x:Bind s:L.Z('按角色分子文件夹（如 my_hero/xxx.png）','One subfolder per character (e.g. my_hero/xxx.png)')}" />
+                <CheckBox x:Name="ExportByClass" Content="{x:Bind s:L.Z('按角色分子文件夹','One subfolder per character')}" />
                 <TextBlock Style="{StaticResource Hint}"
-                           Text="{x:Bind s:L.Z('导出每张卡当前选中的卡图，文件名为卡牌的导出文件名（id）。原版尺寸：普通卡 1000×760，远古/全图卡 606×852。','Exports each card selected art, named after its export id. Native sizes: 1000x760 for normal cards, 606x852 for ancient / full-art cards.')}" />
+                           Text="{x:Bind s:L.Z('导出每张卡选中的卡图，以导出文件名命名。原版尺寸：普通卡 1000×760，远古/全图卡 606×852。','Exports each card selected art, named after its export file name. Native sizes: 1000x760 for normal cards, 606x852 for ancient / full-art cards.')}" />
             </StackPanel>
         </ContentDialog>
     </Grid>

@@ -183,8 +183,9 @@ class Comfy:
         except aiohttp.ClientError:
             pass
 
-    async def run(self, graph, on_progress=None, on_preview=None):
-        """Queue a graph, stream progress/previews over the websocket, return the output PNG bytes."""
+    async def run(self, graph, on_progress=None, on_preview=None, latents=None):
+        """Queue a graph, stream progress/previews over the websocket, return the output PNGs (one per batch item).
+        Files of SaveLatent nodes are appended to `latents` when a list is given."""
         s = await self.session()
         client_id = uuid.uuid4().hex
         ws_url = self.url.replace("http", "ws") + f"/ws?clientId={client_id}"
@@ -221,9 +222,9 @@ class Comfy:
                     raise Interrupted()
                 elif t == "execution_success" or (t == "executing" and d.get("node") is None and d.get("prompt_id") == pid):
                     break
-        return await self._fetch_output(pid)
+        return await self._fetch_output(pid, latents)
 
-    async def _fetch_output(self, pid):
+    async def _fetch_output(self, pid, latents=None):
         s = await self.session()
         for _ in range(3600):
             async with s.get(f"{self.url}/history/{pid}") as r:
@@ -232,12 +233,23 @@ class Comfy:
                 entry = hist[pid]
                 if entry.get("status", {}).get("status_str") == "error":
                     raise RuntimeError(json.dumps(entry["status"].get("messages"), ensure_ascii=False)[:1500])
+                pngs = []
                 for out in entry.get("outputs", {}).values():
                     for img in out.get("images", []):
+                        if img.get("type") != "output":        # previews of intermediate nodes
+                            continue
                         params = {"filename": img["filename"], "subfolder": img["subfolder"], "type": img["type"]}
                         async with s.get(self.url + "/view", params=params) as r2:
                             r2.raise_for_status()
-                            return await r2.read()
+                            pngs.append(await r2.read())
+                if pngs:
+                    for out in entry.get("outputs", {}).values():
+                        for f in out.get("latents", []) if latents is not None else []:
+                            params = {"filename": f["filename"], "subfolder": f["subfolder"], "type": f.get("type", "output")}
+                            async with s.get(self.url + "/view", params=params) as r2:
+                                r2.raise_for_status()
+                                latents.append(await r2.read())
+                    return pngs
                 if entry.get("status", {}).get("completed"):
                     raise RuntimeError(config.tr("ComfyUI 完成但没有输出图像", "ComfyUI finished without an image"))
             await asyncio.sleep(1)

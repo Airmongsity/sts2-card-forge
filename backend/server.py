@@ -28,7 +28,7 @@ import store  # noqa: E402
 import sts2  # noqa: E402
 from comfy import Comfy  # noqa: E402
 from thermal import Thermal  # noqa: E402
-from worker import Worker, make_jobs  # noqa: E402
+from worker import Worker, final_params, make_jobs  # noqa: E402
 
 try:
     VERSION = (config.ROOT / "VERSION").read_text(encoding="utf-8").strip()
@@ -409,7 +409,12 @@ async def favorite_image(request):
 async def delete_image(request):
     img = store.delete_image(int(request.match_info["id"]))
     if img:
-        for p in [Path(img["path"]), *THUMBS.glob(f"{img['id']}_*.jpg")]:
+        files = [Path(img["path"]), *THUMBS.glob(f"{img['id']}_*.jpg")]
+        # a draft batch shares one latent file: remove it with the batch's last draft
+        latent = (img["params"] or {}).get("latent")
+        if latent and not any((i["params"] or {}).get("latent") == latent for i in store.list_images(img["card_id"])):
+            files.append(Path(latent))
+        for p in files:
             try:
                 p.unlink()
             except OSError:
@@ -419,22 +424,36 @@ async def delete_image(request):
 
 @routes.post(r"/api/images/{id:\d+}/refine")
 async def refine(request):
-    """Re-render an image (typically a draft) at full size via img2img, keeping its composition."""
+    """Re-render an image at full size via img2img, keeping its composition and colours."""
     img = image_or_404(request.match_info["id"])
     data = await body(request)
     card = store.get_card(img["card_id"]) if img["card_id"] else None
-    p = img["params"]
-    preset = data.get("size_preset") or ((card or {}).get("params") or {}).get("size_preset")
-    if not preset or preset == "draft":
-        preset = config.load()["gen"]["size_preset"]
-        if preset == "draft":
-            preset = "sts2_card"
-    req = {"prompt": p.get("prompt") or img["prompt"], "negative": p.get("negative"), "seed": img["seed"],
-           "count": 1, "size_preset": preset, "init": img["path"], "denoise": float(data.get("denoise") or 0.55),
-           "lora": p.get("lora"), "lora_strength": p.get("lora_strength"), "refs": p.get("refs") or []}
+    req = dict(_redo_request(img, card, data), init=img["path"], denoise=float(data.get("denoise") or 0.55))
     ids = make_jobs(card, req, config.load())
     worker.wake()
     return ok({"jobs": ids})
+
+
+@routes.post(r"/api/images/{id:\d+}/final")
+async def final_from_draft(request):
+    """Re-draw a draft at full quality: same seed, prompt, references and size, full steps, no EasyCache."""
+    img = image_or_404(request.match_info["id"])
+    if (img["params"] or {}).get("mode") != "draft":
+        raise web.HTTPBadRequest(text=config.tr("只有草图可以精绘", "Only drafts can be painted final"))
+    card = store.get_card(img["card_id"]) if img["card_id"] else None
+    ids = [store.add_job(img["card_id"], final_params(img, config.load(), card))]
+    worker.wake()
+    return ok({"jobs": ids})
+
+
+def _redo_request(img, card, data):
+    """Job request that re-renders an existing image with its own prompt, seed, LoRA and references."""
+    p = img["params"]
+    preset = data.get("size_preset") or ((card or {}).get("params") or {}).get("size_preset") \
+        or config.load()["gen"]["size_preset"]
+    return {"prompt": p.get("prompt") or img["prompt"], "negative": p.get("negative"),
+            "seed": img["seed"], "count": 1, "size_preset": preset if preset in sts2.SIZE_PRESETS else "sts2_card",
+            "lora": p.get("lora"), "lora_strength": p.get("lora_strength"), "refs": p.get("refs") or []}
 
 
 @routes.post(r"/api/images/{id:\d+}/export")

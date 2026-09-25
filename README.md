@@ -48,6 +48,10 @@ and falls back automatically, in the chosen order:
 - ComfyUI and the GGUF node come from GitHub; set *GitHub proxy* (a download-proxy prefix) if GitHub is blocked, or
   download the `.7z` yourself (*Copy download links*), extract it and use *Use existing ComfyUI…*.
 
+*Network proxy* in Setup: **Auto** uses the Windows system proxy, or finds a proxy app's local port when "system
+proxy" is off (Clash / mihomo 7890, Clash Verge 7897, v2rayN 10809, …; a port only counts if it really proxies). Downloads,
+pip and the AI prompt writer go through it; local addresses stay direct. **Off** or a manual address are also possible.
+
 ## Workflow
 1. **Characters**: create your mod character first: name, id (the prompt's trigger word, `sts2 card art, <id> card.`), frame
    colour, palette, appearance and a reference image. Every card belongs to a
@@ -56,18 +60,23 @@ and falls back automatically, in the chosen order:
 2. **Cards**: type your mod's name as the project, create cards (or **AI ideas** to brainstorm a batch from a theme).
 3. Fill in name, export id (e.g. `sleeve_blade`), character, type and card text. *Art concept* takes any language.
    The **theme colour** (default: the character colour) sets the card's light and background; pick one or roll a random one.
-4. **Generate prompt with AI** writes the picture content in the style of the best-performing prompts (editable).
+4. **Generate prompt with AI** writes the picture content in the style of the best-performing prompts (editable), in
+   the UI language by default (the image model reads Chinese as well as English; Settings → prompt language).
    The fixed detail suffix and the default negative prompt are added when generating (both pre-filled, editable).
-5. **Generate art**. The Queue page shows progress and a live preview.
-6. Click a variant to use it as the card art. Right-click to **Refine**, reuse the seed, or use it as a reference / img2img start.
+5. **Draw drafts**: several quick drafts at once. Each draft is the first 8 of its final image's 25 steps: blurry, but
+   already the final composition, colours and light. Right-click the one you like → **Paint final** continues it from
+   there to the finished image (no redraw). *Fast drafts* (EasyCache) makes drafts about 2x faster.
+   **Generate art** draws full images directly. The Queue page shows progress and a live preview.
+6. Click a variant to use it as the card art. Right-click to reuse the seed (it re-draws exactly that image), refine with
+   img2img, or use it as a reference / img2img start.
 7. **Export art** into your mod at native sizes: **1000×760** (normal cards) or **606×852** (ancient / full-art), optionally one subfolder per character.
 
 ## Low-end machines and overheating
 - **Performance profile** (Settings): Auto / Standard / Low / Minimum.
 - **Model quant** (Setup): Q4 for ≤6 GB VRAM, Q5 for 8 GB (default), Q6/Q8 for 12 GB+.
-- **Draft size**: 768×576, ~1.5x faster. Then right-click → *Refine* to re-render the pick at full size, keeping its composition.
+- **Drafts** instead of full images while exploring: ~40 s per draft, ~2 min to finish the chosen one (8 GB laptop GPU).
 - **Overheat protection**: above 90 °C the queue pauses between images and resumes once the GPU is below 70 °C (thresholds, max wait and an optional fixed gap are in Settings). *Skip cooldown* in the Queue page.
-- Measured on an 8 GB laptop GPU: ~6.7 s/step at 1024×768, ~3.5 min per image. The live preview uses `latent2rgb` (free); the `auto` preview overflowed 8 GB VRAM and ran >15x slower.
+- Measured on an 8 GB laptop GPU: ~3 min per full image with a reference image; two images per run are ~19% faster each (on by default for the Standard profile). The live preview uses `latent2rgb` (free); the `auto` preview overflowed 8 GB VRAM and ran >15x slower.
 
 ## Prompting tips
 - CFG **3.0** plus a negative prompt matter most (at CFG 1.0 the model mostly ignores the prompt). 25 steps are enough. LoRA strength 0.9.

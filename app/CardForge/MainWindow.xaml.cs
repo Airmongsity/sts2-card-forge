@@ -258,8 +258,8 @@ public sealed partial class MainWindow : Window
                     {
                         TextWrapping = TextWrapping.Wrap,
                         Text = Gpu.CpuReason() + "\n\n" + L.Z(
-                            "CPU 出图极慢：每张图可能需要数小时，期间 CPU 满载、电脑会明显变卡，笔记本请接通电源。建议先用“草图尺寸”和少量张数试试。",
-                            "CPU generation is extremely slow: each image can take hours, the CPU stays fully loaded and the PC gets sluggish; keep laptops plugged in. Try the draft size and few images first."),
+                            "CPU 出图极慢：每张图可能需要数小时，期间 CPU 满载、电脑会明显变卡，笔记本请接通电源。建议先“抽草图”并减少张数试试。",
+                            "CPU generation is extremely slow: each image can take hours, the CPU stays fully loaded and the PC gets sluggish; keep laptops plugged in. Try a few drafts first."),
                     },
                     dontAsk,
                 },
@@ -301,13 +301,15 @@ public sealed partial class MainWindow : Window
 
         var w = Status.Worker;
         var parts = new List<string>();
-        if (w.Current != null) parts.Add(L.Z("生成中 ", "Generating ") + $"{w.Step}/{w.Steps}");
+        bool loading = w.Current != null && w.Step <= 0;
+        if (w.Current != null) parts.Add(loading ? L.Z("正在加载模型…", "Loading models…") : L.Z("生成中 ", "Generating ") + $"{w.Step}/{w.Steps}");
         if (w.Queued > 0) parts.Add(L.Z($"排队 {w.Queued}", $"{w.Queued} queued"));
         if (w.Cooling && w.CoolReason != "heat") parts.Add(L.Z($"间隔等待 {w.CooldownLeft}s", $"waiting {w.CooldownLeft}s"));
         UpdateTempChip(Status.Gpu, w, Status.Thermal ?? new ThermalLimits());
         if (w.Paused) parts.Add(L.Z("已暂停", "paused"));
         WorkerText.Text = string.Join("  ·  ", parts);
         WorkerBar.Visibility = w.Current != null ? Visibility.Visible : Visibility.Collapsed;
+        WorkerBar.IsIndeterminate = loading;
         WorkerBar.Value = w.Steps > 0 ? 100.0 * w.Step / w.Steps : 0;
 
         int active = w.Queued + (w.Current != null ? 1 : 0);

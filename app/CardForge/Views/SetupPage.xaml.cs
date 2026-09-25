@@ -44,6 +44,21 @@ public sealed partial class SetupPage : Page
         SourceBox.SelectedItem = SourceBox.Items.OfType<ComboBoxItem>().First(i => (string)i.Tag == Setup.Source);
         GithubProxyBox.Text = Setup.GithubProxy;
 
+        NetProxyBox.Items.Clear();
+        foreach (var (id, label) in new[]
+                 {
+                     ("auto", L.Z("自动（系统代理或本机代理端口）", "Auto (system proxy or a local proxy port)")),
+                     ("off", L.Z("不使用", "Off")),
+                     ("manual", L.Z("手动填写", "Manual")),
+                 })
+            NetProxyBox.Items.Add(new ComboBoxItem { Tag = id, Content = label });
+        var np = NetProxy.Setting;
+        var npMode = np is "auto" or "off" ? np : "manual";
+        NetProxyBox.SelectedItem = NetProxyBox.Items.OfType<ComboBoxItem>().First(i => (string)i.Tag == npMode);
+        NetProxyUrl.Text = npMode == "manual" ? np : "";
+        NetProxyUrl.Visibility = npMode == "manual" ? Visibility.Visible : Visibility.Collapsed;
+        _ = ShowProxy(false);
+
         FillQuants();
         ComfyPath.Text = AppPaths.ComfyRoot;
         _loading = false;
@@ -156,12 +171,10 @@ public sealed partial class SetupPage : Page
     {
         var steps = stepsToRun.ToList();
         if (!await ConfirmMachine(steps)) return;
-        string proxy;
-        try { proxy = System.Net.WebRequest.DefaultWebProxy?.GetProxy(new Uri("https://huggingface.co"))?.ToString() ?? "none"; }
-        catch { proxy = "?"; }
+        var (proxy, _) = await NetProxy.Resolve();
         Setup.Log($"==== install {string.Join(",", steps.Select(x => x.Id))} | app {Updater.Current} | {Environment.OSVersion} | " +
                   $"{Gpu.Summary()} | package {Gpu.Package} | source {Setup.Source} (china={Setup.China}) | " +
-                  $"github proxy '{Setup.GithubProxy}' | system proxy {proxy} | root {AppPaths.Root}");
+                  $"github proxy '{Setup.GithubProxy}' | net proxy {NetProxy.Setting} -> {proxy?.ToString() ?? "direct"} | root {AppPaths.Root}");
         _cts = new CancellationTokenSource();
         InstallAll.IsEnabled = false;
         CancelBtn.IsEnabled = true;
@@ -246,6 +259,38 @@ public sealed partial class SetupPage : Page
         if (_loading || SourceBox.SelectedItem is not ComboBoxItem { Tag: string id }) return;
         AppPaths.SaveSettings(s => s["download_source"] = id);
     }
+
+    async Task ShowProxy(bool refresh)
+    {
+        NetProxyStatus.Text = L.Z("检测中…", "Detecting…");
+        var (_, label) = await NetProxy.Resolve(refresh);
+        NetProxyStatus.Text = label + L.Z("。用于下载、pip 与 AI 提示词（改动后重启应用生效于 AI 提示词）。",
+                                          ". Used for downloads, pip and AI prompts (AI prompts pick up a change after restarting the app).");
+    }
+
+    void NetProxyBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || NetProxyBox.SelectedItem is not ComboBoxItem { Tag: string id }) return;
+        NetProxyUrl.Visibility = id == "manual" ? Visibility.Visible : Visibility.Collapsed;
+        if (id == "manual" && NetProxyUrl.Text.Trim().Length == 0) { NetProxyUrl.Focus(FocusState.Programmatic); return; }
+        AppPaths.SaveSettings(s => s["net_proxy"] = id == "manual" ? NetProxyUrl.Text.Trim() : id);
+        _ = ShowProxy(true);
+    }
+
+    void NetProxyUrl_LostFocus(object sender, RoutedEventArgs e)
+    {
+        var v = NetProxyUrl.Text.Trim();
+        if (v.Length == 0) return;
+        if (!Uri.TryCreate(v.Contains("://") ? v : "http://" + v, UriKind.Absolute, out _))
+        {
+            App.Main.ShowError(L.Z("代理地址应形如 http://127.0.0.1:7890", "The proxy address should look like http://127.0.0.1:7890"));
+            return;
+        }
+        AppPaths.SaveSettings(s => s["net_proxy"] = v);
+        _ = ShowProxy(true);
+    }
+
+    void NetProxyDetect_Click(object sender, RoutedEventArgs e) => _ = ShowProxy(true);
 
     void GithubProxyBox_LostFocus(object sender, RoutedEventArgs e)
     {

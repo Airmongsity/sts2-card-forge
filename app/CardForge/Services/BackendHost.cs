@@ -36,6 +36,7 @@ public static class BackendHost
         psi.ArgumentList.Add(Api.Port.ToString());
         psi.Environment["PYTHONUTF8"] = "1";
         psi.Environment["PYTHONIOENCODING"] = "utf-8";
+        await NetProxy.Apply(psi);
 
         _proc = Process.Start(psi)!;
         JobObject.Assign(_proc);

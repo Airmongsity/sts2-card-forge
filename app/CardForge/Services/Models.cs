@@ -81,6 +81,10 @@ public class ImageRec : Observable
     public double Created { get; set; }
 
     [JsonIgnore] public string FavGlyph => Favorite ? "★" : "";
+    [JsonIgnore] public bool IsDraft => Params["mode"]?.ToString() == "draft";
+    [JsonIgnore] public Microsoft.UI.Xaml.Visibility DraftBadge => IsDraft ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+    /// <summary>Position in the batch it was drawn in: with the seed, it re-draws exactly this image.</summary>
+    [JsonIgnore] public int? BatchIndex => int.TryParse(Params["batch_index"]?.ToString(), out var i) && i > 0 ? i : null;
     [JsonIgnore] public ImageSource Thumb => Api.Image(Id, Created, 360);
     [JsonIgnore] public ImageSource Full => Api.Image(Id, Created, null);
     [JsonIgnore] public string Caption => $"{CardName ?? L.Z("(无卡牌)", "(no card)")} · seed {Seed}";
@@ -111,6 +115,8 @@ public class Job : Observable
     [JsonIgnore] public string PromptText => Params["prompt"]?.GetValue<string>() ?? "";
     [JsonIgnore] public string Title => $"#{Id} {CardName ?? L.Z("(无卡牌)", "(no card)")} · seed {Params["seed"]}";
     [JsonIgnore] public double Percent => Progress * 100;
+    /// <summary>Running, but sampling hasn't reached its first step: models loading, prompt and references encoding.</summary>
+    [JsonIgnore] public bool Loading => Status == "running" && Progress <= 0;
     [JsonIgnore] public ImageSource? Thumb => ImageId is int id ? Api.Image(id, ImageCreated, 160) : null;
     [JsonIgnore] public ImageSource? Large => ImageId is int id ? Api.Image(id, ImageCreated, 720) : null;
 }

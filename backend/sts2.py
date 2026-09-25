@@ -35,7 +35,6 @@ RARITIES = {
 # cards. Generation happens at a model-friendly size; export center-crops to the aspect and resizes (Lanczos).
 SIZE_PRESETS = {
     "sts2_card":    {"label": "STS2 card portrait 1000×760",          "gen": (1024, 768), "out": (1000, 760)},
-    "draft":        {"label": "Draft 768×576 (~1.5x faster, then Refine the best)", "gen": (768, 576), "out": (1000, 760)},
     "sts2_ancient": {"label": "STS2 ancient / full art 606×852",      "gen": (768, 1072), "out": (606, 852)},
     "mod_card":     {"label": "724×543",                              "gen": (1024, 768), "out": (724, 543)},
     "small":        {"label": "512×384",                              "gen": (1024, 768), "out": (512, 384)},
@@ -142,15 +141,26 @@ DEFAULT_NEGATIVE = ("flat, plain, simple, blurry, smooth gradients, empty backgr
 DEFAULT_STYLE_SUFFIX = ("Highly detailed: crisp faceted shapes, hard-edged cast shadows, a thin bright rim-light "
                         "outline tracing the subject, layered highlights, small flying chips and sparks, "
                         "few flat colors, no gradients.")
+# The same suffix per prompt language. Chinese was tested against English on the same seeds (2026-09-25): same
+# composition, style and detail, so prompts can be written in the user's own language.
+STYLE_SUFFIXES = {
+    "en": DEFAULT_STYLE_SUFFIX,
+    "zh": "细节丰富：清晰的块面造型，硬边投影，一道细亮的轮廓光勾勒主体，层叠的高光，飞溅的碎屑与火花，少量平涂色块，没有渐变。",
+    "ja": "細部まで描き込む：くっきりした面の造形、硬いエッジの影、主題をなぞる細く明るいリムライト、重なったハイライト、"
+          "飛び散る破片と火花、少ない平塗りの色、グラデーションなし。",
+}
 
 DEFAULT_LORA = "deckbuilder_cardart_style_lora_v1_fp16.safetensors"
 
-# Instructions for the LLM prompt writer. Editable in Settings; {lang} = language of the "notes" line.
+# Instructions for the LLM prompt writer. Editable in Settings; {lang} = language of the "notes" line,
+# {prompt_lang} = language of the prompt itself (the user's own language by default: Qwen-Image-2.1 reads Chinese as
+# well as English, so the prompt is readable at a glance and editable without translating).
 DEFAULT_PROMPT_SYSTEM = """\
 You write image prompts for Qwen-Image-2.1 with a style LoRA that paints Slay the Spire 2 card art.
 The prompt is rendered as-is, so it must be complete and richly detailed.
 
-Format and level of detail (these examples only show the FORMAT; never reuse their subjects, objects or colours):
+Format and level of detail (these examples only show the FORMAT and are in English; write yours in {prompt_lang};
+never reuse their subjects, objects or colours):
 - sts2 card art, warrior card. A spiked mace crashes down with force, embedding itself into a rocky surface and \
 sending shards of stone flying outward. The impact is highlighted by a burst of fiery orange and yellow energy \
 radiating from the point of contact. The mace's metallic gray head glows with heat, with chipped and nicked metal \
@@ -161,17 +171,25 @@ bright white sparkle and leaving a poison-green trail. Leather wraps around the 
 edge, and a thin yellow rim light traces the knuckles and the blade. Yellow and olive background.
 
 Rules:
-- Start with exactly "sts2 card art, <trigger> card." using the trigger given with the card.
-- Then 3-5 plain English sentences, 60-120 words, in this order:
+- Start with exactly "sts2 card art, <trigger> card." in English, using the trigger given with the card.
+- Then 3-5 plain sentences in {prompt_lang} (about 60-120 English words' worth), in this order:
   1. ONE focal subject doing ONE clear action that expresses what the card does, framed close;
   2. concrete visible details: materials, parts, textures and wear ("chipped metal edges", "rivets",
      "frayed cloth") - name every visible part of complex objects, or the model leaves parts out;
   3. light and effects: glows, sparks, trails, flying debris, a thin bright rim-light outline and its colour;
   4. exactly ONE final background sentence: one or two saturated colours that suit the card. No scenery.
-- Follow the author's art concept faithfully and translate it into English.
+- Follow the author's art concept faithfully and write it in {prompt_lang}.
 - If the card's mod character appears, describe them ONLY with the given appearance (or "the character from
-  <image1>" when a reference image is attached). Never invent anatomy or traits: no skeletal, robotic, animal
+  <image1>", in {prompt_lang}, when a reference image is attached; keep the tag <image1> as is). Never invent anatomy or traits: no skeletal, robotic, animal
   or monstrous features unless the appearance says so.
+- The image model does not understand negation: never write what must NOT appear ("no mirror", "not looking
+  into a mirror", "without a crown") - that word alone makes it appear. Leave it out entirely, together with words
+  that evoke it (e.g. no "mirror", "reflection" or "symmetry" when the concept forbids mirrors).
+- When several figures must share a pose, write "in exactly the same pose, facing the same direction", then
+  describe that pose once and concretely (which arm, raised where, hand shape). Never "mirror symmetry" or
+  "mirrored" unless the author asks for a flipped pose.
+- Keep the subject readable: if the subject is dark (black clothing, shadow), the background must be a deep
+  saturated colour, never black or charcoal, and name a bright rim light.
 - Do not add extra characters, text, letters, card frames or UI.
 - Do not add style or quality words (no "cel shading", "illustration", "highly detailed", "masterpiece"):
   a fixed style suffix is appended automatically.

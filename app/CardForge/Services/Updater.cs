@@ -21,14 +21,20 @@ public static class Updater
         Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.0.0")
         ?? new Version(0, 0, 0);
 
-    static readonly HttpClient Http = CreateHttp();
+    static HttpClient? _http;
+    static Uri? _httpProxy;
 
-    static HttpClient CreateHttp()
+    static async Task<HttpClient> Client()
     {
-        // no auto-redirect: the fallback reads the tag from the /releases/latest redirect
-        var h = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(20) };
-        h.DefaultRequestHeaders.UserAgent.ParseAdd("STS2CardForge/" + Current);
-        return h;
+        var (proxy, _) = await NetProxy.Resolve();
+        if (_http == null || _httpProxy != proxy)
+        {
+            // no auto-redirect: the fallback reads the tag from the /releases/latest redirect
+            _http = new HttpClient(await NetProxy.Handler(allowRedirect: false)) { Timeout = TimeSpan.FromSeconds(20) };
+            _http.DefaultRequestHeaders.UserAgent.ParseAdd("STS2CardForge/" + Current);
+            _httpProxy = proxy;
+        }
+        return _http;
     }
 
     public static Version? ParseVersion(string s)
@@ -69,7 +75,7 @@ public static class Updater
 
     static async Task<UpdateInfo?> FromApi(CancellationToken ct)
     {
-        using var resp = await Http.GetAsync($"https://api.github.com/repos/{Repo}/releases/latest", ct);
+        using var resp = await (await Client()).GetAsync($"https://api.github.com/repos/{Repo}/releases/latest", ct);
         if (resp.StatusCode == HttpStatusCode.NotFound) return null;   // no release published yet
         resp.EnsureSuccessStatusCode();
         var rel = JsonNode.Parse(await resp.Content.ReadAsStringAsync(ct))!;
@@ -86,7 +92,7 @@ public static class Updater
         {
             try
             {
-                using var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+                using var resp = await (await Client()).GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
                 var loc = resp.Headers.Location?.ToString() ?? "";
                 var i = loc.IndexOf("/releases/tag/", StringComparison.Ordinal);
                 if (i < 0)

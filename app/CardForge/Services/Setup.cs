@@ -106,13 +106,20 @@ public static class Setup
     public static readonly ModelFile Lora = new("loras", LoraName, LoraRepo, LoraName, 100703552,
         "af780e9a292b658ab896a9b3d9fffb44df7d1c04839189c1fe1fd7cfb3159636");   // ModelScope: tried, used once a mirror exists
 
-    static readonly HttpClient Http = CreateHttp();
+    static HttpClient? _http;
+    static Uri? _httpProxy;
 
-    static HttpClient CreateHttp()
+    /// <summary>Download client, rebuilt when the proxy (NetProxy) changes.</summary>
+    static async Task<HttpClient> Client()
     {
-        var h = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
-        h.DefaultRequestHeaders.UserAgent.ParseAdd("STS2CardForge/1.0");
-        return h;
+        var (proxy, _) = await NetProxy.Resolve();
+        if (_http == null || _httpProxy != proxy)
+        {
+            _http = new HttpClient(await NetProxy.Handler()) { Timeout = Timeout.InfiniteTimeSpan };
+            _http.DefaultRequestHeaders.UserAgent.ParseAdd("STS2CardForge/1.0");
+            _httpProxy = proxy;
+        }
+        return _http;
     }
 
     // ---- download sources ----------------------------------------------------------------------
@@ -549,7 +556,8 @@ public static class Setup
     }
 
     // testing a restricted network on an unrestricted machine: CARDFORGE_BLOCK_HOSTS=huggingface.co,github.com sends
-    // requests for those hosts (and subdomains) to a black hole, so they hang like a DNS-poisoned or firewalled host
+    // direct requests for those hosts (and subdomains) to a black hole, so they hang like a DNS-poisoned or firewalled
+    // host; requests through a proxy are left alone, as a real proxy would get around the block
     static readonly string[] SimulatedBlocked = (Environment.GetEnvironmentVariable("CARDFORGE_BLOCK_HOSTS") ?? "")
         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -574,9 +582,10 @@ public static class Setup
             stall.CancelAfter(StallTimeout);
             try
             {
-                var req = new HttpRequestMessage(HttpMethod.Get, Simulate(url));
+                var http = await Client();
+                var req = new HttpRequestMessage(HttpMethod.Get, _httpProxy == null ? Simulate(url) : url);
                 if (have > 0) req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(have, null);
-                using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, stall.Token);
+                using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, stall.Token);
                 if (resp.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable && size <= 0)
                     size = have;    // the .part file is already complete
                 else
@@ -664,6 +673,7 @@ public static class Setup
         if (workDir != null) psi.WorkingDirectory = workDir;
         foreach (var a in args) psi.ArgumentList.Add(a);
         psi.Environment["PYTHONUTF8"] = "1";
+        await NetProxy.Apply(psi);
         var output = new StringBuilder();
         using var p = new Process { StartInfo = psi };
         void Handle(string? line)

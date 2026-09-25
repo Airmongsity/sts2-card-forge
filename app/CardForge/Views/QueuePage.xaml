@@ -49,7 +49,7 @@
                                 </StackPanel>
                                 <TextBlock Text="{x:Bind PromptText}" Style="{StaticResource Hint}" MaxLines="2" TextTrimming="CharacterEllipsis" />
                                 <TextBlock Text="{x:Bind Message}" Style="{StaticResource Hint}" MaxLines="3" TextTrimming="CharacterEllipsis" IsTextSelectionEnabled="True" />
-                                <ProgressBar Value="{x:Bind Percent}" Visibility="{x:Bind Active}" />
+                                <ProgressBar Value="{x:Bind Percent}" IsIndeterminate="{x:Bind Loading}" Visibility="{x:Bind Active}" />
                             </StackPanel>
                             <Button Grid.Column="2" Tag="{x:Bind Id}" Click="CancelJob_Click" Visibility="{x:Bind Active}" VerticalAlignment="Center"
                                     ToolTipService.ToolTip="{x:Bind s:L.Z('取消','Cancel')}">

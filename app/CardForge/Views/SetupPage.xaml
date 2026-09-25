@@ -20,7 +20,7 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
-                        <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                        <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
                     </Grid.RowDefinitions>
 
                     <TextBlock Text="{x:Bind s:L.Z('显卡','GPU')}" VerticalAlignment="Center" />
@@ -44,6 +44,18 @@
                     <TextBlock Grid.Row="6" Text="{x:Bind s:L.Z('GitHub 代理','GitHub proxy')}" VerticalAlignment="Center" />
                     <TextBox x:Name="GithubProxyBox" Grid.Row="6" Grid.Column="1" LostFocus="GithubProxyBox_LostFocus"
                              PlaceholderText="{x:Bind s:L.Z('可选，如 https://ghfast.top/ ，用于下载 ComfyUI 与节点','Optional, e.g. https://ghfast.top/, used for ComfyUI and node downloads')}" />
+
+                    <TextBlock Grid.Row="7" Text="{x:Bind s:L.Z('网络代理','Network proxy')}" VerticalAlignment="Center" />
+                    <StackPanel Grid.Row="7" Grid.Column="1" Spacing="4">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <ComboBox x:Name="NetProxyBox" MinWidth="200" SelectionChanged="NetProxyBox_SelectionChanged" />
+                            <TextBox x:Name="NetProxyUrl" MinWidth="240" Visibility="Collapsed" LostFocus="NetProxyUrl_LostFocus"
+                                     PlaceholderText="http://127.0.0.1:7890" />
+                        </StackPanel>
+                        <TextBlock x:Name="NetProxyStatus" Style="{StaticResource Hint}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button Grid.Row="7" Grid.Column="2" VerticalAlignment="Top" Content="{x:Bind s:L.Z('重新检测','Detect again')}" Click="NetProxyDetect_Click"
+                            ToolTipService.ToolTip="{x:Bind s:L.Z('刚打开代理软件后点这里','Click after starting your proxy app')}" />
                 </Grid>
             </Border>
 
