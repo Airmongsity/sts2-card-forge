@@ -1,0 +1,8 @@
+{
+  "name": "cardforge-spine-renderer",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@esotericsoftware/spine-canvaskit": "4.2.106"
+  }
+}

@@ -29,6 +29,7 @@ public class Card : Observable
     string _description = "", _concept = "", _prompt = "", _negative = "", _project = "default";
     int? _selectedImage;
     double? _selectedCreated;
+    string _selectedPath = "";
     int _imageCount, _pending;
 
     public int Id { get; set; }
@@ -46,6 +47,7 @@ public class Card : Observable
     public JsonObject Params { get; set; } = new();
     public int? SelectedImage { get => _selectedImage; set { if (Set(ref _selectedImage, value)) Raise(nameof(Thumb)); } }
     public double? SelectedCreated { get => _selectedCreated; set { if (Set(ref _selectedCreated, value)) Raise(nameof(Thumb)); } }
+    public string SelectedPath { get => _selectedPath; set => Set(ref _selectedPath, value ?? ""); }
     public int ImageCount { get => _imageCount; set { if (Set(ref _imageCount, value)) Raise(nameof(Subtitle)); } }
     public int Pending { get => _pending; set { if (Set(ref _pending, value)) Raise(nameof(PendingText)); } }
 
@@ -101,6 +103,10 @@ public class Job : Observable
     public int? ImageId { get; set; }
     public string? CardName { get; set; }
     public double? ImageCreated { get; set; }
+    public string ImagePath { get; set; } = "";
+    public double Created { get; set; }
+    public double? Started { get; set; }
+    public double? Finished { get; set; }
 
     [JsonIgnore] public bool Active => Status is "queued" or "running";
     [JsonIgnore] public string StatusText => Status switch
@@ -133,6 +139,8 @@ public class WorkerStatus
     public string CoolReason { get; set; } = "";
     public double? CoolPeak { get; set; }
     public double CoolSince { get; set; }
+    public int CloudActive { get; set; }
+    public int CloudConcurrency { get; set; }
 }
 
 public class ThermalInfo
@@ -162,6 +170,7 @@ public class ComfyStatus
 public class StatusInfo
 {
     public string Version { get; set; } = "";
+    public string ImageProvider { get; set; } = "comfy";
     public ComfyStatus Comfy { get; set; } = new();
     public WorkerStatus Worker { get; set; } = new();
     public GpuStatus? Gpu { get; set; }
@@ -185,6 +194,7 @@ public class Option
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
     public string? Color { get; set; }
+    public List<string> Colors { get; set; } = new();
     public string? Ref { get; set; }
     public bool UseRef { get; set; }
     public override string ToString() => Name;
@@ -200,6 +210,7 @@ public class MetaInfo
 {
     public List<Option> Classes { get; set; } = new();
     public List<Option> Types { get; set; } = new();
+    public List<Option> SceneModes { get; set; } = new();
     public List<Option> Rarities { get; set; } = new();
     public List<SizeOption> Sizes { get; set; } = new();
     public List<string> Loras { get; set; } = new();
@@ -214,6 +225,7 @@ public class PromptResult
 {
     public string Prompt { get; set; } = "";
     public string Notes { get; set; } = "";
+    public JsonArray PromptHistory { get; set; } = new();
 }
 
 public class IdeaCard : Observable
@@ -235,6 +247,7 @@ public class ModCharacter : Observable
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
     public string Color { get; set; } = "#7a7a9a";
+    public List<string> Colors { get; set; } = new();
     public string Palette { get; set; } = "";
     public string Appearance { get; set; } = "";
     public string RefImage { get; set; } = "";
@@ -250,6 +263,99 @@ public class ExportResult
     public List<string> Written { get; set; } = new();
     public List<string> Skipped { get; set; } = new();
     public string Folder { get; set; } = "";
+}
+
+public class ReferenceAsset
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public string Category { get; set; } = "other";
+    public string Role { get; set; } = "style";
+    public string Path { get; set; } = "";
+    public string SourcePath { get; set; } = "";
+    public string SourceKind { get; set; } = "image";
+    public string SourceVersion { get; set; } = "";
+    public string SourceHash { get; set; } = "";
+    public JsonObject Metadata { get; set; } = new();
+    public double Created { get; set; }
+    [JsonIgnore] public string PromptHint => Metadata["prompt_hint"]?.GetValue<string>() ?? "";
+    [JsonIgnore] public ImageSource Thumb => Api.ReferenceImage(Id, Created);
+    [JsonIgnore] public string Detail => $"{Role}  ·  {Metadata["width"]}×{Metadata["height"]}";
+}
+
+public class ReferenceFile
+{
+    public string Path { get; set; } = "";
+    public string Name => System.IO.Path.GetFileName(Path);
+}
+
+public class NativeCandidate
+{
+    public string Kind { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Path { get; set; } = "";
+    public string Atlas { get; set; } = "";
+    public List<string> Textures { get; set; } = new();
+    public List<string> Missing { get; set; } = new();
+    public string Version { get; set; } = "";
+    public string Role { get; set; } = "style";
+    public bool Localized { get; set; }
+    public bool Ready { get; set; }
+}
+
+public class NativeScanCounts
+{
+    public int Images { get; set; }
+    public int Spine { get; set; }
+    public int ReadySpine { get; set; }
+    public int Packages { get; set; }
+}
+
+public class NativeScanResult
+{
+    public string Root { get; set; } = "";
+    public List<NativeCandidate> Images { get; set; } = new();
+    public List<NativeCandidate> Spine { get; set; } = new();
+    public List<string> Packages { get; set; } = new();
+    public NativeScanCounts Counts { get; set; } = new();
+}
+
+public class NativeGameDiscovery
+{
+    public List<string> Found { get; set; } = new();
+    public List<string> Searched { get; set; } = new();
+}
+
+public class NativeExtractionResult
+{
+    public string Root { get; set; } = "";
+    public string Pck { get; set; } = "";
+    public bool Cached { get; set; }
+    public string Fingerprint { get; set; } = "";
+}
+
+public class NativeImportResult
+{
+    public int Total { get; set; }
+    public int Imported { get; set; }
+    public int Skipped { get; set; }
+    public int Failed { get; set; }
+    public List<NativeImportError> Errors { get; set; } = new();
+}
+
+public class NativeImportError
+{
+    public string Path { get; set; } = "";
+    public string Error { get; set; } = "";
+}
+
+public class SpineRendererInfo
+{
+    public bool Ok { get; set; }
+    public string Node { get; set; } = "";
+    public string NodeVersion { get; set; } = "";
+    public bool Installed { get; set; }
+    public string RuntimeVersion { get; set; } = "";
 }
 
 /// <summary>SQLite stores booleans as 0/1.</summary>

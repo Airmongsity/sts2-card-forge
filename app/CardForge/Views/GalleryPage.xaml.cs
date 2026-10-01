@@ -48,14 +48,38 @@ public sealed partial class GalleryPage : Page
         {
             var list = await Api.Get<List<ImageRec>>(q);
             var keep = Selected?.Id;
-            _items.Clear();
-            foreach (var i in list) _items.Add(i);
+            Sync(list);
             CountText.Text = L.Z($"{list.Count} 张", $"{list.Count} images");
             // never leave the detail column empty: keep the selection, else show the newest image
             Grid.SelectedItem = _items.FirstOrDefault(i => i.Id == keep) ?? _items.FirstOrDefault();
             ShowDetail();
         }
         catch (Exception ex) { App.Main.ShowError(ex.Message); }
+    }
+
+    // Keeps existing ImageRec instances (and their already-decoded thumbnails) for ids that are still present,
+    // instead of clearing and re-adding every item, which forced every thumbnail to re-decode on each refresh.
+    void Sync(List<ImageRec> list)
+    {
+        var ids = list.Select(i => i.Id).ToHashSet();
+        foreach (var stale in _items.Where(i => !ids.Contains(i.Id)).ToList()) _items.Remove(stale);
+        var byId = _items.ToDictionary(i => i.Id);
+        for (var pos = 0; pos < list.Count; pos++)
+        {
+            var incoming = list[pos];
+            if (!byId.ContainsKey(incoming.Id))
+            {
+                _items.Insert(Math.Min(pos, _items.Count), incoming);
+                byId[incoming.Id] = incoming;
+            }
+            else
+            {
+                var existing = byId[incoming.Id];
+                var from = _items.IndexOf(existing);
+                if (from != pos) _items.Move(from, pos);
+                existing.Favorite = incoming.Favorite;
+            }
+        }
     }
 
     async void Filter_Changed(object sender, SelectionChangedEventArgs e) { if (!_loading) await Load(); }
@@ -69,8 +93,8 @@ public sealed partial class GalleryPage : Page
         var img = Selected;
         Detail.Visibility = img == null ? Visibility.Collapsed : Visibility.Visible;
         DetailColumn.Width = img == null ? new GridLength(0) : new GridLength(440);
-        if (img == null) return;
-        Big.Source = img.Full;
+        if (img == null) { Big.Path = ""; return; }
+        Big.Path = img.Path;
         DetailTitle.Text = img.CardName ?? L.Z("(无卡牌)", "(no card)");
         var p = img.Params;
         DetailMeta.Text = $"{img.Width}×{img.Height} · seed {img.Seed} · cfg {p["cfg"]} · {p["steps"]} steps\n" +

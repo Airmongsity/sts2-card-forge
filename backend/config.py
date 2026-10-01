@@ -11,6 +11,7 @@ DATA = ROOT / "data"
 IMAGES = DATA / "images"
 LATENTS = DATA / "latents"      # drafts' half-done runs, which "final" finishes
 LOGS = DATA / "logs"
+NATIVE_LIBRARY = DATA / "native_library"   # imported reference / template images
 SETTINGS_FILE = DATA / "settings.json"
 DB_FILE = DATA / "cardforge.db"
 
@@ -23,6 +24,7 @@ DEFAULTS = {
     "comfy_preview": "latent2rgb",         # none | latent2rgb | auto. latent2rgb measured free on an 8 GB card;
                                            # auto overflowed VRAM there and ran >15x slower
     "backend_port": 8190,
+    "cloud_concurrency": 3,                # parallel requests for cloud image jobs (local ComfyUI jobs always run one at a time)
     "download_source": "auto",            # auto | global (HuggingFace, GitHub, PyPI) | china (ModelScope, PyPI mirror)
     "github_proxy": "",                    # optional prefix for GitHub downloads, e.g. https://ghfast.top/
     "net_proxy": "auto",                   # auto (system proxy or a probed local proxy port) | off | http://host:port;
@@ -182,5 +184,5 @@ def tr(zh, en):
     return zh if ui_lang().startswith("zh") else en
 
 
-for d in (DATA, IMAGES, LOGS):
+for d in (DATA, IMAGES, LOGS, NATIVE_LIBRARY):
     d.mkdir(parents=True, exist_ok=True)

@@ -27,6 +27,14 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 
 New-Item -ItemType Directory -Force (Join-Path $dist "backend") | Out-Null
 Copy-Item (Join-Path $root "backend\*.py"), (Join-Path $root "backend\requirements.txt") (Join-Path $dist "backend")
+if (Test-Path (Join-Path $root "backend\spine_renderer")) {
+    Push-Location (Join-Path $root "backend\spine_renderer")
+    try {
+        & npm.cmd ci --omit=dev
+        if ($LASTEXITCODE -ne 0) { throw "npm ci for spine renderer failed" }
+    } finally { Pop-Location }
+    Copy-Item (Join-Path $root "backend\spine_renderer") (Join-Path $dist "backend") -Recurse
+}
 Copy-Item (Join-Path $root "README.md"), (Join-Path $root "NOTICE"), (Join-Path $root "VERSION") $dist
 New-Item -ItemType Directory -Force (Join-Path $dist "examples") | Out-Null
 Copy-Item (Join-Path $root "examples\cards.json"), (Join-Path $root "examples\*.jpg") (Join-Path $dist "examples")

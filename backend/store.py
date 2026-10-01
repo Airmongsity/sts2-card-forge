@@ -3,6 +3,7 @@ import json
 import sqlite3
 import threading
 import time
+from pathlib import Path
 
 import config
 
@@ -50,14 +51,30 @@ CREATE TABLE IF NOT EXISTS characters (
     name TEXT NOT NULL DEFAULT '',
     base_class TEXT NOT NULL DEFAULT 'colorless',
     color TEXT NOT NULL DEFAULT '#7a7a9a',
+    colors TEXT NOT NULL DEFAULT '[]',
     palette TEXT NOT NULL DEFAULT '',
     appearance TEXT NOT NULL DEFAULT '',
     ref_image TEXT NOT NULL DEFAULT '',
     use_ref INTEGER NOT NULL DEFAULT 1,
     created REAL
 );
+CREATE TABLE IF NOT EXISTS reference_assets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'other',
+    role TEXT NOT NULL DEFAULT 'style',
+    path TEXT NOT NULL UNIQUE,
+    source_path TEXT NOT NULL DEFAULT '',
+    source_kind TEXT NOT NULL DEFAULT 'image',
+    source_version TEXT NOT NULL DEFAULT '',
+    source_hash TEXT NOT NULL DEFAULT '',
+    local_only INTEGER NOT NULL DEFAULT 0,
+    metadata TEXT NOT NULL DEFAULT '{}',
+    created REAL
+);
 CREATE INDEX IF NOT EXISTS images_card ON images(card_id);
 CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status);
+CREATE INDEX IF NOT EXISTS reference_assets_category ON reference_assets(category);
 """
 
 CARD_FIELDS = ("project", "name", "slug", "cls", "type", "rarity", "cost", "description", "concept", "prompt",
@@ -65,7 +82,16 @@ CARD_FIELDS = ("project", "name", "slug", "cls", "type", "rarity", "cost", "desc
 
 _db = sqlite3.connect(config.DB_FILE, check_same_thread=False)
 _db.row_factory = sqlite3.Row
+_db.execute("PRAGMA journal_mode=WAL")
 _db.executescript(SCHEMA)
+# Existing projects predate character colour pools. SQLite's CREATE TABLE IF NOT EXISTS does not add columns.
+if "colors" not in {r[1] for r in _db.execute("PRAGMA table_info(characters)").fetchall()}:
+    _db.execute("ALTER TABLE characters ADD COLUMN colors TEXT NOT NULL DEFAULT '[]'")
+    _db.commit()
+# Kept as a compatibility column for databases created by older builds. Native
+# references now follow the same upload behaviour as every other reference.
+_db.execute("UPDATE reference_assets SET local_only = 0 WHERE local_only != 0")
+_db.commit()
 _lock = threading.RLock()
 
 
@@ -94,6 +120,7 @@ def _row(r, json_fields=("params",)):
 def list_cards(project=None):
     sql = """SELECT c.*, (SELECT COUNT(*) FROM images i WHERE i.card_id = c.id) AS image_count,
                     (SELECT created FROM images i WHERE i.id = c.selected_image) AS selected_created,
+                    (SELECT path FROM images i WHERE i.id = c.selected_image) AS selected_path,
                     (SELECT COUNT(*) FROM jobs j WHERE j.card_id = c.id AND j.status IN ('queued','running')) AS pending
              FROM cards c"""
     rows = _q(sql + (" WHERE project = ? ORDER BY id" if project else " ORDER BY project, id"),
@@ -102,7 +129,8 @@ def list_cards(project=None):
 
 
 def get_card(cid):
-    return _row(_q("""SELECT c.*, (SELECT created FROM images i WHERE i.id = c.selected_image) AS selected_created
+    return _row(_q("""SELECT c.*, (SELECT created FROM images i WHERE i.id = c.selected_image) AS selected_created,
+                      (SELECT path FROM images i WHERE i.id = c.selected_image) AS selected_path
                       FROM cards c WHERE c.id = ?""", (cid,)).fetchone())
 
 
@@ -198,13 +226,17 @@ def next_job():
     return _row(_q("SELECT * FROM jobs WHERE status = 'queued' ORDER BY id LIMIT 1").fetchone())
 
 
+def queued_jobs():
+    return [_row(r) for r in _q("SELECT * FROM jobs WHERE status = 'queued' ORDER BY id").fetchall()]
+
+
 def update_job(jid, **kw):
     if kw:
         _q(f"UPDATE jobs SET {', '.join(k + ' = ?' for k in kw)} WHERE id = ?", (*kw.values(), jid))
 
 
 def list_jobs(active_only=False, limit=200):
-    sql = ("SELECT j.*, c.name AS card_name, i.created AS image_created FROM jobs j "
+    sql = ("SELECT j.*, c.name AS card_name, i.created AS image_created, i.path AS image_path FROM jobs j "
            "LEFT JOIN cards c ON c.id = j.card_id LEFT JOIN images i ON i.id = j.image_id")
     if active_only:
         sql += " WHERE j.status IN ('queued', 'running')"
@@ -227,20 +259,22 @@ def recover_after_restart():
 
 # ---- MOD characters (custom classes) --------------------------------------------------------
 
-CHARACTER_FIELDS = ("name", "color", "palette", "appearance", "ref_image", "use_ref")
+CHARACTER_FIELDS = ("name", "color", "colors", "palette", "appearance", "ref_image", "use_ref")
 
 
 def list_characters():
-    return [dict(r) for r in _q("SELECT * FROM characters ORDER BY created").fetchall()]
+    return [_row(r, ("colors",)) for r in _q("SELECT * FROM characters ORDER BY created").fetchall()]
 
 
 def get_character(cid):
     r = _q("SELECT * FROM characters WHERE id = ?", (cid,)).fetchone()
-    return dict(r) if r else None
+    return _row(r, ("colors",))
 
 
 def save_character(cid, data):
     fields = {k: data[k] for k in CHARACTER_FIELDS if k in data}
+    if "colors" in fields:
+        fields["colors"] = json.dumps(fields["colors"] or [], ensure_ascii=False)
     if "use_ref" in fields:
         fields["use_ref"] = 1 if fields["use_ref"] else 0
     if get_character(cid):
@@ -255,3 +289,69 @@ def save_character(cid, data):
 
 def delete_character(cid):
     _q("DELETE FROM characters WHERE id = ?", (cid,))
+
+
+# ---- local reference/template library -------------------------------------------------------
+
+def list_reference_assets(category=None):
+    rows = _q("SELECT * FROM reference_assets" + (" WHERE category = ?" if category else "") +
+              " ORDER BY created DESC, id DESC", (category,) if category else ()).fetchall()
+    return [_row(r, ("metadata",)) for r in rows]
+
+
+def prune_missing_reference_assets():
+    """Forget library records whose managed image was removed from disk outside CardForge."""
+    missing = [asset for asset in list_reference_assets() if not Path(asset.get("path") or "").is_file()]
+    for asset in missing:
+        _q("DELETE FROM reference_assets WHERE id = ?", (asset["id"],))
+    return missing
+
+
+def get_reference_asset(aid):
+    return _row(_q("SELECT * FROM reference_assets WHERE id = ?", (aid,)).fetchone(), ("metadata",))
+
+
+def reference_asset_by_path(path):
+    return _row(_q("SELECT * FROM reference_assets WHERE path = ?", (str(path),)).fetchone(), ("metadata",))
+
+
+def reference_asset_by_source_path(path):
+    return _row(_q("SELECT * FROM reference_assets WHERE source_path = ? ORDER BY id LIMIT 1", (str(path),)).fetchone(),
+                ("metadata",))
+
+
+def reference_asset_by_source_variant(path, variant):
+    rows = _q("SELECT * FROM reference_assets WHERE source_path = ? ORDER BY id", (str(path),)).fetchall()
+    for row in rows:
+        asset = _row(row, ("metadata",))
+        if (asset.get("metadata") or {}).get("animation") == variant:
+            return asset
+    return None
+
+
+def reference_asset_by_name(name):
+    return _row(_q("SELECT * FROM reference_assets WHERE name = ? COLLATE NOCASE ORDER BY id LIMIT 1", (str(name),)).fetchone(),
+                ("metadata",))
+
+
+def save_reference_asset(data):
+    now = time.time()
+    fields = {k: data.get(k) for k in ("name", "category", "role", "path", "source_path", "source_kind",
+              "source_version", "source_hash") if k in data}
+    fields["local_only"] = 0
+    fields["metadata"] = json.dumps(data.get("metadata") or {}, ensure_ascii=False)
+    fields["created"] = now
+    old = get_reference_asset(data["id"]) if data.get("id") else reference_asset_by_path(fields["path"])
+    if old:
+        _q(f"UPDATE reference_assets SET {', '.join(k + ' = ?' for k in fields)} WHERE id = ?",
+           (*fields.values(), old["id"]))
+        return get_reference_asset(old["id"])
+    cur = _q(f"INSERT INTO reference_assets ({', '.join(fields)}) VALUES ({', '.join('?' * len(fields))})",
+             tuple(fields.values()))
+    return get_reference_asset(cur.lastrowid)
+
+
+def delete_reference_asset(aid):
+    asset = get_reference_asset(aid)
+    _q("DELETE FROM reference_assets WHERE id = ?", (aid,))
+    return asset

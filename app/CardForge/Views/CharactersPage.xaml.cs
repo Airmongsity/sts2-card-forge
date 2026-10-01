@@ -13,6 +13,8 @@ public sealed partial class CharactersPage : Page
     readonly ObservableCollection<ModCharacter> _chars = new();
     ModCharacter? _current;
     bool _isNew, _syncingColor;
+    readonly List<string> _pool = new();
+    const int MaxPoolColors = 8;
 
     public CharactersPage()
     {
@@ -57,6 +59,7 @@ public sealed partial class CharactersPage : Page
         IdBox.IsReadOnly = !isNew;   // cards and export folders refer to the id
         ColorBox.Text = c.Color;
         SwatchPreview.Background = new SolidColorBrush(Meta.ParseColor(c.Color));
+        SetPool(c.Colors.Count > 0 ? c.Colors : [c.Color]);
         PaletteBox.Text = c.Palette;
         AppearanceBox.Text = c.Appearance;
         RefBox.Text = c.RefImage;
@@ -70,7 +73,11 @@ public sealed partial class CharactersPage : Page
     void New_Click(object sender, RoutedEventArgs e)
     {
         CharList.SelectedItem = null;
-        Show(new ModCharacter { Name = L.Z("新角色", "New character"), Color = "#6a5acd", UseRef = true }, true);
+        Show(new ModCharacter
+        {
+            Name = L.Z("新角色", "New character"), Color = "#6a5acd",
+            Colors = ["#6a5acd", "#334f80", "#9b4f91", "#c68a35"], UseRef = true
+        }, true);
         IdBox.Focus(FocusState.Programmatic);
     }
 
@@ -94,6 +101,7 @@ public sealed partial class CharactersPage : Page
             {
                 name = NameBox.Text.Trim(),
                 color = ColorBox.Text.Trim(),
+                colors = _pool.Where(IsHex).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
                 palette = PaletteBox.Text.Trim(),
                 appearance = AppearanceBox.Text.Trim(),
                 ref_image = RefBox.Text,
@@ -161,5 +169,74 @@ public sealed partial class CharactersPage : Page
         _syncingColor = true;
         ColorBox.Text = $"#{args.NewColor.R:x2}{args.NewColor.G:x2}{args.NewColor.B:x2}";
         _syncingColor = false;
+    }
+
+    static bool IsHex(string s) => System.Text.RegularExpressions.Regex.IsMatch(s, "^#[0-9a-fA-F]{6}$");
+    static string Hex(Windows.UI.Color c) => $"#{c.R:x2}{c.G:x2}{c.B:x2}";
+
+    void SetPool(IEnumerable<string> colors)
+    {
+        _pool.Clear();
+        _pool.AddRange(colors.Where(IsHex).Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxPoolColors));
+        if (_pool.Count == 0) _pool.Add(IsHex(ColorBox.Text) ? ColorBox.Text : "#6a5acd");
+        RebuildPool();
+    }
+
+    void RebuildPool()
+    {
+        PoolColors.Children.Clear();
+        for (var i = 0; i < _pool.Count; i++) PoolColors.Children.Add(PoolChip(i));
+        AddPoolBtn.IsEnabled = _pool.Count < MaxPoolColors;
+    }
+
+    FrameworkElement PoolChip(int index)
+    {
+        var color = Meta.ParseColor(_pool[index]);
+        var swatch = new Border
+        {
+            Width = 40, Height = 22, CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1),
+            BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(0x40, 0xff, 0xff, 0xff)),
+            Background = new SolidColorBrush(color),
+        };
+        var picker = new ColorPicker { IsAlphaEnabled = false, Color = color };
+        var content = new StackPanel { Spacing = 8 };
+        content.Children.Add(picker);
+        var button = new DropDownButton { Content = swatch, Padding = new Thickness(6, 4, 6, 4), Flyout = new Flyout { Content = content } };
+        void SetTip() => ToolTipService.SetToolTip(button, _pool[index]);
+        SetTip();
+        picker.ColorChanged += (_, args) =>
+        {
+            if (index >= _pool.Count) return;
+            _pool[index] = Hex(args.NewColor);
+            swatch.Background = new SolidColorBrush(args.NewColor);
+            SetTip();
+        };
+        var remove = new Button { Content = L.Z("移除此颜色", "Remove this colour"), HorizontalAlignment = HorizontalAlignment.Right };
+        remove.IsEnabled = _pool.Count > 1;
+        remove.Click += (_, _) =>
+        {
+            button.Flyout.Hide();
+            _pool.RemoveAt(index);
+            RebuildPool();
+        };
+        content.Children.Add(remove);
+        return button;
+    }
+
+    void AddPool_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pool.Count >= MaxPoolColors) return;
+        _pool.Add(IsHex(ColorBox.Text) && !_pool.Contains(ColorBox.Text, StringComparer.OrdinalIgnoreCase)
+            ? ColorBox.Text.ToLowerInvariant() : "#d08a1e");
+        RebuildPool();
+        if (PoolColors.Children.LastOrDefault() is DropDownButton b) b.Flyout.ShowAt(b);
+    }
+
+    void UseFrameColor_Click(object sender, RoutedEventArgs e)
+    {
+        var color = ColorBox.Text.Trim().ToLowerInvariant();
+        if (!IsHex(color) || _pool.Contains(color, StringComparer.OrdinalIgnoreCase) || _pool.Count >= MaxPoolColors) return;
+        _pool.Add(color);
+        RebuildPool();
     }
 }

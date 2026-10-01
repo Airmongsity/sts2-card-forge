@@ -5,112 +5,313 @@
     xmlns:s="using:CardForge.Services"
     NavigationCacheMode="Required">
 
-    <ScrollViewer>
-        <StackPanel Padding="32,24" Spacing="12" MaxWidth="980" HorizontalAlignment="Left">
-            <TextBlock Text="{x:Bind s:L.Z('环境安装','Setup')}" Style="{StaticResource TitleTextBlockStyle}" />
-            <TextBlock Style="{StaticResource Hint}"
-                       Text="{x:Bind s:L.Z('一键下载并配置本地出图所需的全部组件（约 14 GB）。下载支持断点续传并校验 SHA-256，某个源不可用时会自动换源；已存在的文件会被跳过。支持 NVIDIA（GTX 900 系起）、AMD（RX 6000 起，Windows 11）与 Intel Arc 显卡，建议 8 GB 显存以上。',
-                                           'Downloads and configures everything needed for local generation (~14 GB). Downloads resume, are SHA-256 verified and switch source automatically when one fails; files already present are skipped. Supports NVIDIA (GTX 900 series and newer), AMD (RX 6000 and newer, Windows 11) and Intel Arc GPUs; 8 GB VRAM or more recommended.')}" />
+    <Page.Resources>
+        <!-- section heading inside a panel -->
+        <Style x:Key="SectionTitle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+            <Setter Property="FontSize" Value="16" />
+        </Style>
+        <!-- label column of the local-environment form -->
+        <Style x:Key="FieldLabel" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Style>
+    </Page.Resources>
 
-            <Border Style="{StaticResource Panel}">
-                <Grid ColumnSpacing="16" RowSpacing="10">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
-                    </Grid.RowDefinitions>
+    <Grid Padding="24,20,24,0" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-                    <TextBlock Text="{x:Bind s:L.Z('显卡','GPU')}" VerticalAlignment="Center" />
-                    <TextBlock x:Name="GpuText" Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" />
-
-                    <TextBlock Grid.Row="1" Text="{x:Bind s:L.Z('运行包','Package')}" VerticalAlignment="Center" />
-                    <ComboBox x:Name="PackageBox" Grid.Row="1" Grid.Column="1" MinWidth="360" SelectionChanged="PackageBox_SelectionChanged" />
-
-                    <InfoBar x:Name="GpuWarn" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Severity="Warning" IsClosable="False" />
-
-                    <TextBlock Grid.Row="3" Text="{x:Bind s:L.Z('模型量化','Model quant')}" VerticalAlignment="Center" />
-                    <ComboBox x:Name="QuantBox" Grid.Row="3" Grid.Column="1" MinWidth="360" SelectionChanged="QuantBox_SelectionChanged" />
-
-                    <TextBlock Grid.Row="4" Text="ComfyUI" VerticalAlignment="Center" />
-                    <TextBox x:Name="ComfyPath" Grid.Row="4" Grid.Column="1" IsReadOnly="True" />
-                    <Button Grid.Row="4" Grid.Column="2" Content="{x:Bind s:L.Z('选择已有 ComfyUI…','Use existing ComfyUI…')}" Click="PickComfy_Click" />
-
-                    <TextBlock Grid.Row="5" Text="{x:Bind s:L.Z('下载源','Download source')}" VerticalAlignment="Center" />
-                    <ComboBox x:Name="SourceBox" Grid.Row="5" Grid.Column="1" MinWidth="360" SelectionChanged="SourceBox_SelectionChanged" />
-
-                    <TextBlock Grid.Row="6" Text="{x:Bind s:L.Z('GitHub 代理','GitHub proxy')}" VerticalAlignment="Center" />
-                    <TextBox x:Name="GithubProxyBox" Grid.Row="6" Grid.Column="1" LostFocus="GithubProxyBox_LostFocus"
-                             PlaceholderText="{x:Bind s:L.Z('可选，如 https://ghfast.top/ ，用于下载 ComfyUI 与节点','Optional, e.g. https://ghfast.top/, used for ComfyUI and node downloads')}" />
-
-                    <TextBlock Grid.Row="7" Text="{x:Bind s:L.Z('网络代理','Network proxy')}" VerticalAlignment="Center" />
-                    <StackPanel Grid.Row="7" Grid.Column="1" Spacing="4">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <ComboBox x:Name="NetProxyBox" MinWidth="200" SelectionChanged="NetProxyBox_SelectionChanged" />
-                            <TextBox x:Name="NetProxyUrl" MinWidth="240" Visibility="Collapsed" LostFocus="NetProxyUrl_LostFocus"
-                                     PlaceholderText="http://127.0.0.1:7890" />
-                        </StackPanel>
-                        <TextBlock x:Name="NetProxyStatus" Style="{StaticResource Hint}" TextWrapping="Wrap" />
-                    </StackPanel>
-                    <Button Grid.Row="7" Grid.Column="2" VerticalAlignment="Top" Content="{x:Bind s:L.Z('重新检测','Detect again')}" Click="NetProxyDetect_Click"
-                            ToolTipService.ToolTip="{x:Bind s:L.Z('刚打开代理软件后点这里','Click after starting your proxy app')}" />
-                </Grid>
-            </Border>
-
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button x:Name="InstallAll" Style="{StaticResource AccentButtonStyle}" Click="InstallAll_Click">
+        <!-- header: page title + current image mode -->
+        <Grid ColumnSpacing="16" MaxWidth="980" HorizontalAlignment="Stretch">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <StackPanel Spacing="2">
+                <TextBlock Text="{x:Bind s:L.Z('配置','Configuration')}" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock x:Name="ModeText" Style="{StaticResource Hint}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button x:Name="LocalModeBtn" Click="UseLocalMode_Click"
+                        ToolTipService.ToolTip="{x:Bind s:L.Z('用本机显卡通过 ComfyUI 出图','Generate on this PC with ComfyUI')}">
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <FontIcon Glyph="&#xE896;" FontSize="14" />
-                        <TextBlock Text="{x:Bind s:L.Z('一键安装缺失组件','Install everything missing')}" />
+                        <FontIcon Glyph="&#xE7F8;" FontSize="14" />
+                        <TextBlock Text="{x:Bind s:L.Z('本地模式','Local mode')}" />
                     </StackPanel>
                 </Button>
-                <Button x:Name="CancelBtn" Content="{x:Bind s:L.Z('取消','Cancel')}" Click="Cancel_Click" IsEnabled="False" />
-                <Button Content="{x:Bind s:L.Z('重新检查','Re-check')}" Click="Recheck_Click" />
-                <CheckBox x:Name="IncludeLora" IsChecked="True" Content="{x:Bind s:L.Z('包含风格 LoRA','Include the style LoRA')}" />
-                <Button Content="{x:Bind s:L.Z('复制下载链接','Copy download links')}" Click="CopyLinks_Click" />
-                <Button Content="{x:Bind s:L.Z('打开模型文件夹','Open models folder')}" Click="OpenModels_Click" />
-                <Button Content="{x:Bind s:L.Z('安装日志','Install log')}" Click="OpenLog_Click" />
+                <Button x:Name="CloudModeBtn" Click="UseCloud_Click"
+                        ToolTipService.ToolTip="{x:Bind s:L.Z('通过云端图像 API 出图，可能产生费用','Generate through a cloud image API; may incur charges')}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE753;" FontSize="14" />
+                        <TextBlock Text="{x:Bind s:L.Z('云端模式','Cloud mode')}" />
+                    </StackPanel>
+                </Button>
             </StackPanel>
+        </Grid>
 
-            <ItemsControl x:Name="StepsList">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="s:SetupStep">
-                        <Border Style="{StaticResource Panel}" Margin="0,0,0,8">
-                            <Grid ColumnSpacing="14">
+        <SelectorBar x:Name="Sections" Grid.Row="1" SelectionChanged="Sections_SelectionChanged" MaxWidth="980" HorizontalAlignment="Stretch">
+            <SelectorBarItem x:Name="ImageSectionItem" Text="{x:Bind s:L.Z('图像生成','Image generation')}" IsSelected="True">
+                <SelectorBarItem.Icon><FontIcon Glyph="&#xEB9F;" /></SelectorBarItem.Icon>
+            </SelectorBarItem>
+            <SelectorBarItem x:Name="PromptSectionItem" Text="{x:Bind s:L.Z('提示词 AI','Prompt AI')}">
+                <SelectorBarItem.Icon><FontIcon Glyph="&#xE8BD;" /></SelectorBarItem.Icon>
+            </SelectorBarItem>
+            <SelectorBarItem x:Name="LocalSectionItem" Text="{x:Bind s:L.Z('本地环境','Local environment')}">
+                <SelectorBarItem.Icon><FontIcon Glyph="&#xE896;" /></SelectorBarItem.Icon>
+            </SelectorBarItem>
+        </SelectorBar>
+
+        <!-- the width cap lives on an inner Grid: a ScrollViewer centres a MaxWidth child by its desired width,
+             so sections with narrow content slid to the right -->
+        <ScrollViewer Grid.Row="2" x:Name="SectionScroll">
+          <Grid>
+            <Grid MaxWidth="980" HorizontalAlignment="Stretch" Padding="0,4,0,32">
+
+                <!-- ===== Image generation ===== -->
+                <StackPanel x:Name="ImageSection" Spacing="12">
+                    <Border Style="{StaticResource Panel}">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="{x:Bind s:L.Z('图像生成服务','Image provider')}" Style="{StaticResource SectionTitle}" />
+                            <!-- width capped by the column, not MaxWidth: a stretched element under its MaxWidth gets centred -->
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" MaxWidth="460" /></Grid.ColumnDefinitions>
+                                <ComboBox x:Name="ImagePresetBox" HorizontalAlignment="Stretch"
+                                          DisplayMemberPath="Name" SelectionChanged="ImagePresetBox_SelectionChanged" />
+                            </Grid>
+                            <TextBlock Style="{StaticResource Hint}"
+                                       Text="{x:Bind s:L.Z('本地 ComfyUI 与云端 API 二选一，可随时切换；云端可能产生服务费用。','Choose local ComfyUI or a cloud API; you can switch at any time. Cloud use may incur provider charges.')}" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="ImageApiFields" Style="{StaticResource Panel}" Visibility="Collapsed">
+                        <StackPanel Spacing="14">
+                            <TextBlock Text="{x:Bind s:L.Z('云端 API','Cloud API')}" Style="{StaticResource SectionTitle}" />
+                            <Grid ColumnSpacing="16" RowSpacing="14">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+
+                                <TextBox x:Name="ImageEndpointBox" Grid.ColumnSpan="2"
+                                         Header="{x:Bind s:L.Z('API 端点 / Base URL','API endpoint / Base URL')}" />
+
+                                <TextBox x:Name="ImageModelBox" Grid.Row="1" Header="{x:Bind s:L.Z('图像模型','Image model')}" />
+                                <ComboBox x:Name="ImageQualityBox" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch"
+                                          Header="{x:Bind s:L.Z('质量','Quality')}">
+                                    <x:String>auto</x:String><x:String>low</x:String><x:String>medium</x:String><x:String>high</x:String>
+                                </ComboBox>
+
+                                <PasswordBox x:Name="ImageKeyBox" Grid.Row="2" Header="API key" />
+                                <NumberBox x:Name="CloudConcurrencyBox" Grid.Row="2" Grid.Column="1"
+                                           Header="{x:Bind s:L.Z('并发请求数','Concurrent requests')}"
+                                           Minimum="1" Maximum="8" Value="3" SpinButtonPlacementMode="Inline"
+                                           ToolTipService.ToolTip="{x:Bind s:L.Z('同时向云端发送的出图请求数（1–8）。本地 ComfyUI 任务始终逐张生成。','How many cloud requests run at once (1–8). Local ComfyUI jobs always run one at a time.')}" />
+                            </Grid>
+                            <TextBlock x:Name="ImageKeyHint" Style="{StaticResource Hint}" IsTextSelectionEnabled="True" />
+
+                            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                      Header="{x:Bind s:L.Z('高级：额外请求参数（JSON）','Advanced: extra request parameters (JSON)')}">
+                                <TextBox x:Name="ImageExtraBox" AcceptsReturn="True" TextWrapping="Wrap" FontFamily="Consolas"
+                                         MinHeight="72" MaxHeight="160" PlaceholderText="{}{}" />
+                            </Expander>
+
+                            <InfoBar Severity="Informational" IsOpen="True" IsClosable="False"
+                                     Message="{x:Bind s:L.Z('云端模式不使用本地 LoRA、CFG 或采样步数；参考图仅在服务支持时随请求发送。','Cloud mode does not use the local LoRA, CFG, or sampling steps. References are sent only when the provider supports them.')}" />
+                        </StackPanel>
+                    </Border>
+
+                    <Button Style="{StaticResource AccentButtonStyle}" Click="SaveServiceConfig_Click"
+                            Content="{x:Bind s:L.Z('保存','Save')}" MinWidth="120" />
+                </StackPanel>
+
+                <!-- ===== Prompt AI ===== -->
+                <StackPanel x:Name="PromptSection" Spacing="12" Visibility="Collapsed">
+                    <Border Style="{StaticResource Panel}">
+                        <StackPanel Spacing="14">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="{x:Bind s:L.Z('提示词服务','Prompt provider')}" Style="{StaticResource SectionTitle}" />
+                                <TextBlock Style="{StaticResource Hint}"
+                                           Text="{x:Bind s:L.Z('把卡牌描述写成图片提示词，也用于构思新卡。可选云端服务、本地 Ollama / LM Studio，或离线模板。','Turns card descriptions into image prompts and helps brainstorm cards. Choose a cloud service, local Ollama / LM Studio, or an offline template.')}" />
+                            </StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" MaxWidth="460" /></Grid.ColumnDefinitions>
+                                <ComboBox x:Name="PresetBox" HorizontalAlignment="Stretch"
+                                          DisplayMemberPath="Name" SelectionChanged="PresetBox_SelectionChanged" />
+                            </Grid>
+
+                            <StackPanel x:Name="LlmFields" Spacing="14">
+                                <Grid ColumnSpacing="16" RowSpacing="14">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                    <TextBox x:Name="BaseUrlBox" Grid.ColumnSpan="2" Header="Base URL" />
+                                    <TextBox x:Name="ModelBox" Grid.Row="1" Header="{x:Bind s:L.Z('模型','Model')}" />
+                                    <PasswordBox x:Name="KeyBox" Grid.Row="1" Grid.Column="1" Header="API key" />
+                                </Grid>
+                                <ComboBox x:Name="EffortBox" Visibility="Collapsed" Header="{x:Bind s:L.Z('推理强度（Claude）','Effort (Claude)')}" MinWidth="200">
+                                    <x:String>low</x:String><x:String>medium</x:String><x:String>high</x:String>
+                                </ComboBox>
+                                <TextBlock x:Name="KeyHint" Style="{StaticResource Hint}" />
+                            </StackPanel>
+
+                            <!-- edited on the Settings page; kept here so a save from this page keeps their values -->
+                            <TextBox x:Name="SystemPromptBox" Visibility="Collapsed" />
+                            <TextBox x:Name="TemplateBox" Visibility="Collapsed" />
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Style="{StaticResource AccentButtonStyle}" Click="SaveServiceConfig_Click"
+                                Content="{x:Bind s:L.Z('保存','Save')}" MinWidth="120" />
+                        <Button Content="{x:Bind s:L.Z('测试提示词 AI','Test prompt AI')}" Click="TestLlm_Click" />
+                        <ProgressRing x:Name="TestRing" IsActive="False" Width="20" Height="20" />
+                    </StackPanel>
+                    <TextBlock x:Name="TestResult" Style="{StaticResource Hint}" IsTextSelectionEnabled="True" />
+                </StackPanel>
+
+                <!-- ===== Local environment ===== -->
+                <StackPanel x:Name="LocalSection" Spacing="12" Visibility="Collapsed">
+                    <TextBlock Style="{StaticResource Hint}"
+                               Text="{x:Bind s:L.Z('一键下载并配置本地出图所需的全部组件（约 14 GB）。下载支持断点续传并校验 SHA-256，某个源不可用时会自动换源；已存在的文件会被跳过。支持 NVIDIA（GTX 900 系起）、AMD（RX 6000 起，Windows 11）与 Intel Arc 显卡，建议 8 GB 显存以上。',
+                                                   'Downloads and configures everything needed for local generation (~14 GB). Downloads resume, are SHA-256 verified and switch source automatically when one fails; files already present are skipped. Supports NVIDIA (GTX 900 series and newer), AMD (RX 6000 and newer, Windows 11) and Intel Arc GPUs; 8 GB VRAM or more recommended.')}" />
+
+                    <Border Style="{StaticResource Panel}">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="{x:Bind s:L.Z('硬件与模型','Hardware and model')}" Style="{StaticResource SectionTitle}" />
+                            <Grid ColumnSpacing="16" RowSpacing="12">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="120" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <FontIcon Glyph="{x:Bind Glyph, Mode=OneWay}" Foreground="{x:Bind GlyphBrush, Mode=OneWay}" FontSize="20" VerticalAlignment="Top" Margin="0,2,0,0" />
-                                <StackPanel Grid.Column="1" Spacing="4">
-                                    <TextBlock Text="{x:Bind Title}" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                    <TextBlock Text="{x:Bind Description, Mode=OneWay}" Style="{StaticResource Hint}" />
-                                    <TextBlock Text="{x:Bind Detail, Mode=OneWay}" Style="{StaticResource Hint}" MaxLines="8" TextTrimming="CharacterEllipsis" IsTextSelectionEnabled="True" />
-                                    <ProgressBar Value="{x:Bind Progress, Mode=OneWay}" IsIndeterminate="{x:Bind Indeterminate, Mode=OneWay}"
-                                                 Visibility="{x:Bind Busy, Mode=OneWay}" />
-                                </StackPanel>
-                                <Button Grid.Column="2" Tag="{x:Bind Id}" Click="InstallOne_Click" VerticalAlignment="Top"
-                                        Content="{x:Bind s:L.Z('安装','Install')}" />
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Text="{x:Bind s:L.Z('显卡','GPU')}" Style="{StaticResource FieldLabel}" />
+                                <TextBlock x:Name="GpuText" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" TextWrapping="Wrap" />
+
+                                <TextBlock Grid.Row="1" Text="{x:Bind s:L.Z('运行包','Package')}" Style="{StaticResource FieldLabel}" />
+                                <ComboBox x:Name="PackageBox" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="PackageBox_SelectionChanged" />
+
+                                <InfoBar x:Name="GpuWarn" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Severity="Warning" IsClosable="False" />
+
+                                <TextBlock Grid.Row="3" Text="{x:Bind s:L.Z('模型量化','Model quant')}" Style="{StaticResource FieldLabel}" />
+                                <ComboBox x:Name="QuantBox" Grid.Row="3" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="QuantBox_SelectionChanged" />
+
+                                <TextBlock Grid.Row="4" Text="ComfyUI" Style="{StaticResource FieldLabel}" />
+                                <TextBox x:Name="ComfyPath" Grid.Row="4" Grid.Column="1" IsReadOnly="True" />
+                                <Button Grid.Row="4" Grid.Column="2" Content="{x:Bind s:L.Z('选择已有…','Use existing…')}" Click="PickComfy_Click"
+                                        ToolTipService.ToolTip="{x:Bind s:L.Z('使用已经安装的 ComfyUI 便携版','Use a ComfyUI portable install you already have')}" />
                             </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                        </StackPanel>
+                    </Border>
 
-            <InfoBar x:Name="DoneBar" Severity="Success" IsClosable="False"
-                     Title="{x:Bind s:L.Z('环境就绪','All set')}"
-                     Message="{x:Bind s:L.Z('所有组件已安装。前往“卡牌”页开始创作。','Everything is installed. Head to Cards to start.')}">
-                <InfoBar.ActionButton>
-                    <Button Content="{x:Bind s:L.Z('开始使用','Get started')}" Click="GoCards_Click" />
-                </InfoBar.ActionButton>
-            </InfoBar>
+                    <Border Style="{StaticResource Panel}">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="{x:Bind s:L.Z('下载与网络','Downloads and network')}" Style="{StaticResource SectionTitle}" />
+                            <Grid ColumnSpacing="16" RowSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
 
-            <TextBlock Style="{StaticResource Hint}"
-                       Text="{x:Bind s:L.Z('许可：Qwen-Image-2.1 与本 LoRA 遵循 Qwen RESEARCH LICENSE，仅限非商业用途（研究/评估）。生成的卡图同样不得商用。',
-                                           'License: Qwen-Image-2.1 and the LoRA are under the Qwen RESEARCH LICENSE, non-commercial use only (research/evaluation). Generated art may not be used commercially either.')}" />
-        </StackPanel>
-    </ScrollViewer>
+                                <TextBlock Text="{x:Bind s:L.Z('下载源','Download source')}" Style="{StaticResource FieldLabel}" />
+                                <ComboBox x:Name="SourceBox" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="SourceBox_SelectionChanged" />
+
+                                <TextBlock Grid.Row="1" Text="{x:Bind s:L.Z('GitHub 代理','GitHub proxy')}" Style="{StaticResource FieldLabel}" />
+                                <TextBox x:Name="GithubProxyBox" Grid.Row="1" Grid.Column="1" LostFocus="GithubProxyBox_LostFocus"
+                                         PlaceholderText="{x:Bind s:L.Z('可选，如 https://ghfast.top/','Optional, e.g. https://ghfast.top/')}" />
+
+                                <TextBlock Grid.Row="2" Text="{x:Bind s:L.Z('网络代理','Network proxy')}" Style="{StaticResource FieldLabel}" VerticalAlignment="Top" Margin="0,6,0,0" />
+                                <StackPanel Grid.Row="2" Grid.Column="1" Spacing="6">
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <ComboBox x:Name="NetProxyBox" HorizontalAlignment="Stretch" SelectionChanged="NetProxyBox_SelectionChanged" />
+                                        <TextBox x:Name="NetProxyUrl" Grid.Column="1" Width="220" Visibility="Collapsed" LostFocus="NetProxyUrl_LostFocus"
+                                                 PlaceholderText="http://127.0.0.1:7890" />
+                                    </Grid>
+                                    <TextBlock x:Name="NetProxyStatus" Style="{StaticResource Hint}" />
+                                </StackPanel>
+                                <Button Grid.Row="2" Grid.Column="2" VerticalAlignment="Top" Content="{x:Bind s:L.Z('重新检测','Detect again')}" Click="NetProxyDetect_Click"
+                                        ToolTipService.ToolTip="{x:Bind s:L.Z('刚打开代理软件后点这里','Click after starting your proxy app')}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- actions: primary on the left, the rest in a menu so the row never overflows -->
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="InstallAll" Style="{StaticResource AccentButtonStyle}" Click="InstallAll_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE896;" FontSize="14" />
+                                    <TextBlock Text="{x:Bind s:L.Z('切换到本地并安装','Switch to local and install')}" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="CancelBtn" Content="{x:Bind s:L.Z('取消','Cancel')}" Click="Cancel_Click" IsEnabled="False" />
+                            <CheckBox x:Name="IncludeLora" IsChecked="True" Content="{x:Bind s:L.Z('包含风格 LoRA','Include the style LoRA')}" Margin="8,0,0,0" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                            <Button Content="{x:Bind s:L.Z('重新检查','Re-check')}" Click="Recheck_Click" />
+                            <DropDownButton Content="{x:Bind s:L.Z('更多','More')}">
+                                <DropDownButton.Flyout>
+                                    <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                        <MenuFlyoutItem Text="{x:Bind s:L.Z('复制下载链接','Copy download links')}" Click="CopyLinks_Click">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C8;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Text="{x:Bind s:L.Z('打开模型文件夹','Open models folder')}" Click="OpenModels_Click">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE838;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Text="{x:Bind s:L.Z('安装日志','Install log')}" Click="OpenLog_Click">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE9F9;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                    </MenuFlyout>
+                                </DropDownButton.Flyout>
+                            </DropDownButton>
+                        </StackPanel>
+                    </Grid>
+
+                    <InfoBar x:Name="DoneBar" Severity="Success" IsClosable="False"
+                             Title="{x:Bind s:L.Z('环境就绪','All set')}"
+                             Message="{x:Bind s:L.Z('所有组件已安装。前往“卡牌”页开始创作。','Everything is installed. Head to Cards to start.')}">
+                        <InfoBar.ActionButton>
+                            <Button Content="{x:Bind s:L.Z('开始使用','Get started')}" Click="GoCards_Click" />
+                        </InfoBar.ActionButton>
+                    </InfoBar>
+
+                    <ItemsControl x:Name="StepsList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="s:SetupStep">
+                                <Border Style="{StaticResource Panel}" Margin="0,0,0,8" Padding="16,12">
+                                    <Grid ColumnSpacing="14">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="{x:Bind Glyph, Mode=OneWay}" Foreground="{x:Bind GlyphBrush, Mode=OneWay}" FontSize="20" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                        <StackPanel Grid.Column="1" Spacing="4">
+                                            <TextBlock Text="{x:Bind Title}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                            <TextBlock Text="{x:Bind Description, Mode=OneWay}" Style="{StaticResource Hint}" />
+                                            <TextBlock Text="{x:Bind Detail, Mode=OneWay}" Style="{StaticResource Hint}" MaxLines="8" TextTrimming="CharacterEllipsis" IsTextSelectionEnabled="True" />
+                                            <ProgressBar Value="{x:Bind Progress, Mode=OneWay}" IsIndeterminate="{x:Bind Indeterminate, Mode=OneWay}"
+                                                         Visibility="{x:Bind Busy, Mode=OneWay}" />
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Tag="{x:Bind Id}" Click="InstallOne_Click" VerticalAlignment="Center"
+                                                Content="{x:Bind s:L.Z('安装','Install')}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Style="{StaticResource Hint}"
+                               Text="{x:Bind s:L.Z('许可：Qwen-Image-2.1 与本 LoRA 遵循 Qwen RESEARCH LICENSE，仅限非商业用途（研究/评估）。生成的卡图同样不得商用。',
+                                                   'License: Qwen-Image-2.1 and the LoRA are under the Qwen RESEARCH LICENSE, non-commercial use only (research/evaluation). Generated art may not be used commercially either.')}" />
+                </StackPanel>
+            </Grid>
+          </Grid>
+        </ScrollViewer>
+    </Grid>
 </Page>

@@ -8,3 +8,7 @@ the Qwen RESEARCH LICENSE AGREEMENT, which permits use, reproduction, distributi
 derivative works FOR NON-COMMERCIAL PURPOSES ONLY (research or evaluation).
 
 Full license: https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE
+
+Optional local Spine preview rendering uses the official Spine Runtimes. Users of that feature must own their own
+Spine Editor license. Spine Runtimes Copyright (c) 2013-2026, Esoteric Software LLC. See:
+https://github.com/EsotericSoftware/spine-runtimes/blob/4.2/LICENSE

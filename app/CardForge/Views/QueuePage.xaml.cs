@@ -14,10 +14,20 @@ public sealed partial class QueuePage : Page
     readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(2) };
     string _lastSignature = "";
 
+    bool _polling;
+
     public QueuePage()
     {
         InitializeComponent();
-        _timer.Tick += async (_, _) => await Refresh();
+        _timer.Tick += async (_, _) => await PollSafely();
+    }
+
+    async Task PollSafely()
+    {
+        if (_polling) return;
+        _polling = true;
+        try { await Refresh(); }
+        finally { _polling = false; }
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -48,19 +58,28 @@ public sealed partial class QueuePage : Page
         PauseBtn.IsChecked = w.Paused;
         SkipCoolBtn.IsEnabled = w.Cooling;
         var st = App.Main.Status;
-        WorkerInfo.Text = (w.Current != null ? L.Z($"正在生成 #{w.Current}：{w.Step}/{w.Steps} 步", $"Generating #{w.Current}: step {w.Step}/{w.Steps}")
-                          : w.Cooling && w.CoolReason != "heat" ? L.Z($"间隔等待 {w.CooldownLeft}s", $"Waiting {w.CooldownLeft}s between images")
-                          : w.Queued > 0 ? L.Z($"排队 {w.Queued} 张", $"{w.Queued} queued")
-                          : L.Z("空闲", "Idle"));
+        // w.Current is the local ComfyUI job only; cloud jobs run in parallel and are counted in CloudActive
+        var lines = new List<string>();
+        if (w.Current != null) lines.Add(L.Z($"正在生成 #{w.Current}：{w.Step}/{w.Steps} 步", $"Generating #{w.Current}: step {w.Step}/{w.Steps}"));
+        if (w.CloudActive > 0) lines.Add(L.Z($"云端生成中 {w.CloudActive}/{w.CloudConcurrency}", $"Cloud generating {w.CloudActive}/{w.CloudConcurrency}"));
+        if (w.Cooling && w.CoolReason != "heat") lines.Add(L.Z($"间隔等待 {w.CooldownLeft}s", $"Waiting {w.CooldownLeft}s between images"));
+        if (w.Queued > 0) lines.Add(L.Z($"排队 {w.Queued} 张", $"{w.Queued} queued"));
+        WorkerInfo.Text = lines.Count > 0 ? string.Join("\n", lines) : L.Z("空闲", "Idle");
 
         if (st != null)
-            ComfyInfo.Text = $"{st.Comfy.State}  ·  {st.Comfy.Url}" +
-                             (string.IsNullOrEmpty(st.Comfy.Profile) ? "" : L.Z("  ·  性能档位 ", "  ·  profile ") + st.Comfy.Profile) +
-                             (string.IsNullOrEmpty(st.Comfy.Error) ? "" : "\n" + st.Comfy.Error);
+        {
+            bool cloud = st.ImageProvider != "comfy";
+            RendererTitle.Text = cloud ? L.Z("云端图像 API", "Cloud image API") : "ComfyUI";
+            ComfyButtons.Visibility = cloud ? Visibility.Collapsed : Visibility.Visible;
+            ComfyInfo.Text = cloud ? L.Z("远程生成的图片会自动下载到本地图库。", "Remote results are downloaded into the local library automatically.")
+                : $"{st.Comfy.State}  ·  {st.Comfy.Url}" +
+                  (string.IsNullOrEmpty(st.Comfy.Profile) ? "" : L.Z("  ·  性能档位 ", "  ·  profile ") + st.Comfy.Profile) +
+                  (string.IsNullOrEmpty(st.Comfy.Error) ? "" : "\n" + st.Comfy.Error);
+        }
 
         try { Scene.Update(await Api.Get<ThermalInfo>("/api/thermal")); } catch { }
 
-        _runningJob = w.Current;
+        _runningJob = w.Current ?? list.Jobs.FirstOrDefault(j => j.Status == "running")?.Id;
         UpdateAbortOverlay();
 
         var bytes = w.Current != null ? await Api.GetBytes("/api/preview") : null;
@@ -129,7 +148,7 @@ public sealed partial class QueuePage : Page
         {
             await action();
             _lastSignature = "";
-            await Refresh();
+            await PollSafely();
         }
         catch (Exception ex) { App.Main.ShowError(ex.Message); }
     }

@@ -37,7 +37,7 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Border CornerRadius="6" Background="{ThemeResource ControlFillColorDefaultBrush}">
-                            <Image Source="{x:Bind Thumb}" Stretch="UniformToFill" />
+                            <s:LocalImage Path="{x:Bind Path}" DecodeWidth="360" Stretch="UniformToFill" />
                         </Border>
                         <TextBlock Text="{x:Bind FavGlyph, Mode=OneWay}" Foreground="Gold" Margin="6,2" FontSize="16" />
                         <TextBlock Grid.Row="1" Text="{x:Bind Caption}" Style="{StaticResource Hint}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
@@ -49,7 +49,7 @@
         <ScrollViewer Grid.Column="1" Grid.RowSpan="2">
             <StackPanel x:Name="Detail" Spacing="10" Visibility="Collapsed">
                 <Border CornerRadius="8" Background="{ThemeResource ControlFillColorDefaultBrush}">
-                    <Image x:Name="Big" Stretch="Uniform" MaxHeight="340" />
+                    <s:LocalImage x:Name="Big" DecodeWidth="900" Stretch="Uniform" MaxHeight="340" />
                 </Border>
                 <TextBlock x:Name="DetailTitle" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
                 <TextBlock x:Name="DetailMeta" Style="{StaticResource Hint}" IsTextSelectionEnabled="True" />

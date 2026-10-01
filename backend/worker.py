@@ -1,6 +1,7 @@
-"""Single-GPU job queue: pulls queued jobs from the DB and runs them one at a time through ComfyUI."""
+"""Job queue: local jobs run one at a time through ComfyUI (single GPU); cloud API jobs run several at once."""
 import asyncio
 import io
+import json
 import random
 import re
 import time
@@ -9,6 +10,7 @@ from pathlib import Path
 
 from PIL import Image
 
+import cloud_image
 import config
 import graph
 import store
@@ -35,7 +37,11 @@ def resolve_params(card, req, settings):
     if not refs and "<image1>" in prompt:
         prompt = re.sub(r"(?i)\b(the) character from <image1>", r"\1 character", prompt)
         prompt = re.sub(r"<image1>\s*(中的|里的|の)", "", prompt).replace("<image1>", "the character")
+    provider = settings.get("image_provider") or "comfy"
+    cloud = provider != "comfy"
     mode = req.get("mode") or "normal"
+    if cloud and mode == "draft":
+        mode = "normal"                 # drafts resume a ComfyUI latent; cloud APIs have none
     p = {
         "mode": mode,
         "prompt": prompt,
@@ -50,8 +56,16 @@ def resolve_params(card, req, settings):
         "init": gen.get("init") or "",
         "denoise": float(gen.get("denoise") or 0.6),
         "size_preset": gen.get("size_preset") or "sts2_card",
-        "batch": 1 if gen.get("init") else batch_size(settings, gen),
+        # cloud requests ask for one image each, so every variant is its own job and they can run in parallel
+        "batch": 1 if gen.get("init") or cloud else batch_size(settings, gen),
+        "image_provider": provider,
     }
+    if cloud:
+        p.update(image_preset=settings.get("image_preset") or "",
+                 image_api_base_url=settings.get("image_api_base_url") or "",
+                 image_api_model=settings.get("image_api_model") or "",
+                 image_api_quality=settings.get("image_api_quality") or "auto",
+                 image_api_extra=settings.get("image_api_extra") or "")
     if mode == "draft":
         # A draft is the first stop_at steps of the final's own run (full size, full step schedule, + EasyCache); its
         # half-done latent is kept and the final just runs the remaining steps from it. (Small drafts can't lead to
@@ -123,25 +137,61 @@ def make_jobs(card, req, settings):
     return ids
 
 
+CLOUD_KEYS = ("image_preset", "image_api_base_url", "image_api_model", "image_api_quality", "image_api_extra")
+
+
+def is_cloud(job):
+    """A job runs where it was created for: jobs queued before a provider switch keep their renderer."""
+    return ((job.get("params") or {}).get("image_provider") or "comfy") != "comfy"
+
+
+def _with_provider(job, settings):
+    """Jobs queued by older versions carry no provider; they follow the current setting."""
+    p = job.get("params") or {}
+    if "image_provider" in p:
+        return job
+    provider = settings.get("image_provider") or "comfy"
+    p = dict(p, image_provider=provider)
+    if provider != "comfy":
+        p.update({k: settings.get(k) or "" for k in CLOUD_KEYS})
+        if p.get("mode") == "draft":
+            p["mode"] = "normal"
+    store.update_job(job["id"], params=json.dumps(p, ensure_ascii=False))
+    return dict(job, params=p)
+
+
+def cloud_concurrency(settings):
+    try:
+        return max(1, min(8, int(settings.get("cloud_concurrency") or 3)))
+    except (TypeError, ValueError):
+        return 3
+
+
 class Worker:
     def __init__(self, comfy, thermal):
         self.comfy = comfy
         self.thermal = thermal
         self.paused = False
-        self.current = None
+        self.current = None             # the local ComfyUI job (one at a time: a single GPU)
         self.step = (0, 0)
-        self.preview = None             # latest JPEG preview of the running job
+        self.preview = None             # latest JPEG preview of the running local job
         self.cooling_until = 0.0
-        self._wake = asyncio.Event()
+        self._wake = asyncio.Event()        # wakes the scheduler loop
+        self._cool_wake = asyncio.Event()   # wakes a running cooldown
         self._cancel_current = False
         self._skip_cooldown = False
         self.last_finished = 0.0
         self.cool_reason = ""           # "heat" | "interval"
         self.cool_peak = None
         self.cool_since = 0.0
+        self._local_task = None
+        self.cloud_running = {}         # job id -> asyncio.Task; cloud jobs are network-bound, so several run at once
+        self._cloud_cancelled = set()   # cloud job ids the user cancelled (vs. tasks cancelled by shutdown)
+        self._cloud_limit = 3
 
     def wake(self):
         self._wake.set()
+        self._cool_wake.set()
 
     def skip_cooldown(self):
         self._skip_cooldown = True
@@ -152,12 +202,13 @@ class Worker:
                 "queued": store.count_queued(),
                 "cooldown_left": max(0, round(self.cooling_until - time.time())) if self.cooling_until else 0,
                 "cooling": bool(self.cooling_until), "cool_reason": self.cool_reason,
-                "cool_peak": self.cool_peak, "cool_since": self.cool_since}
+                "cool_peak": self.cool_peak, "cool_since": self.cool_since,
+                "cloud_active": len(self.cloud_running), "cloud_concurrency": self._cloud_limit}
 
     async def _sleep(self, seconds):
-        self._wake.clear()
+        self._cool_wake.clear()
         try:
-            await asyncio.wait_for(self._wake.wait(), seconds)
+            await asyncio.wait_for(self._cool_wake.wait(), seconds)
         except asyncio.TimeoutError:
             pass
 
@@ -165,26 +216,100 @@ class Worker:
         job = store.get_job(jid)
         if not job:
             return
-        if jid == self.current:
+        task = self.cloud_running.get(jid)
+        if task:
+            self._cloud_cancelled.add(jid)
+            task.cancel()
+        elif jid == self.current:
             self._cancel_current = True
             await self.comfy.interrupt()
         elif job["status"] == "queued":
             store.update_job(jid, status="cancelled", finished=time.time())
 
     async def loop(self):
+        """Scheduler: local jobs go through ComfyUI strictly one after another; cloud jobs start as soon as a
+        request slot is free, independently of the local queue and its cooldown."""
         store.recover_after_restart()
         while True:
-            if self.paused:
-                await self._sleep(5)
+            self._wake.clear()
+            if not self.paused:
+                try:
+                    self._schedule()
+                except Exception:   # a bad row must not stop the queue
+                    traceback.print_exc()
+            try:
+                await asyncio.wait_for(self._wake.wait(), 5)
+            except asyncio.TimeoutError:
+                pass
+
+    def _schedule(self):
+        settings = config.load()
+        self._cloud_limit = cloud_concurrency(settings)
+        queued = [_with_provider(j, settings) for j in store.queued_jobs()]
+        for job in queued:
+            if not is_cloud(job) or len(self.cloud_running) >= self._cloud_limit:
                 continue
-            if not store.count_queued():
-                await self._sleep(5)
-                continue
+            # claim it before the task starts, so the next pass doesn't pick it again
+            store.update_job(job["id"], status="running", started=time.time(), progress=0,
+                             message=config.tr("正在请求云端图像 API…", "Requesting the cloud image API…"))
+            self.cloud_running[job["id"]] = asyncio.get_running_loop().create_task(self._run_cloud(job))
+        if self._local_task is None or self._local_task.done():
+            local = next((j for j in queued if not is_cloud(j)), None)
+            if local:
+                self._local_task = asyncio.get_running_loop().create_task(self._local(local["id"]))
+
+    async def shutdown(self):
+        """Stop in-flight cloud requests; they go back to the queue and run again on the next start."""
+        tasks = list(self.cloud_running.values())
+        for t in tasks:
+            t.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _local(self, jid):
+        try:
             await self._cool_down()
-            job = store.next_job()        # re-read: the queue may have changed while cooling
-            if job and not self.paused:
+            job = store.get_job(jid)        # re-read: it may have been cancelled while cooling
+            if job and job["status"] == "queued" and not self.paused:
                 await self._run(job)
                 self.last_finished = time.time()
+        finally:
+            self.wake()
+
+    async def _run_cloud(self, job):
+        jid, p = job["id"], job["params"]
+        t0 = time.time()
+        try:
+            datas = await cloud_image.generate(p, config.load())
+            folder = config.IMAGES / (str(job["card_id"]) if job["card_id"] else "loose")
+            folder.mkdir(parents=True, exist_ok=True)
+            qwen_edit = p.get("image_preset") == "siliconflow" and "qwen/qwen-image-edit" in (p.get("image_api_model") or "").casefold()
+            first = None
+            for i, data in enumerate(datas):
+                if qwen_edit:
+                    data = cloud_image.normalize_qwen_edit_result(data, p["width"], p["height"])
+                img = Image.open(io.BytesIO(data))
+                img.load()
+                index = p["pick"] if p.get("pick") is not None else i
+                path = folder / (f"{jid:05d}_{p['seed']}" + (f"_{index}" if index else "") + ".png")
+                img.save(path)
+                rec = store.add_image(job["card_id"], path, img.width, img.height, p["seed"], p["prompt"],
+                                      dict(p, batch_index=index), auto_select=True)
+                first = first or rec
+            store.update_job(jid, status="done", progress=1, image_id=first["id"] if first else None, finished=time.time(),
+                             message=config.tr("完成", "Done") + f" {time.time() - t0:.0f}s")
+        except asyncio.CancelledError:
+            if jid in self._cloud_cancelled:
+                store.update_job(jid, status="cancelled", finished=time.time(), message=config.tr("已取消", "Cancelled"))
+            else:   # shutdown: run it again next start
+                store.update_job(jid, status="queued", progress=0, message="")
+        except Exception as e:  # keep the queue alive; the message is shown in the UI
+            traceback.print_exc()
+            store.update_job(jid, status="failed", finished=time.time(), message=str(e)[:1000])
+        finally:
+            self.cloud_running.pop(jid, None)
+            self._cloud_cancelled.discard(jid)
+            self.wake()
 
     async def _cool_down(self):
         """Overheat protection with hysteresis: at or above `cool_trigger` °C, wait until the GPU is back at or

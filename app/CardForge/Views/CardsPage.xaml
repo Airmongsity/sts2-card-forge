@@ -36,7 +36,7 @@
                             </Grid.ColumnDefinitions>
                             <Rectangle Fill="{x:Bind ClassBrush, Mode=OneWay}" RadiusX="2" RadiusY="2" />
                             <Border Grid.Column="1" Width="64" Height="48" CornerRadius="4" Background="{ThemeResource ControlFillColorDefaultBrush}">
-                                <Image Source="{x:Bind Thumb, Mode=OneWay}" Stretch="UniformToFill" />
+                                <s:LocalImage Path="{x:Bind SelectedPath, Mode=OneWay}" DecodeWidth="160" Stretch="UniformToFill" />
                             </Border>
                             <StackPanel Grid.Column="2" VerticalAlignment="Center">
                                 <TextBlock Text="{x:Bind Title, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
@@ -107,18 +107,39 @@
 
                     <Grid ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBox x:Name="RefBox" Header="{x:Bind s:L.Z('参考图','Reference image')}" IsReadOnly="True" />
-                        <Button Grid.Column="1" VerticalAlignment="Bottom" Content="…" Click="PickRef_Click" />
-                        <Button Grid.Column="2" VerticalAlignment="Bottom" Click="ClearRef_Click" ToolTipService.ToolTip="{x:Bind s:L.Z('此卡不用参考图','No reference for this card')}" AutomationProperties.Name="{x:Bind s:L.Z('此卡不用参考图','No reference for this card')}"><SymbolIcon Symbol="Clear" /></Button>
-                        <Button Grid.Column="3" VerticalAlignment="Bottom" Click="InheritRef_Click" ToolTipService.ToolTip="{x:Bind s:L.Z('恢复为角色参考图','Use the character reference')}" AutomationProperties.Name="{x:Bind s:L.Z('恢复为角色参考图','Use the character reference')}"><SymbolIcon Symbol="Contact" /></Button>
+                        <TextBox x:Name="RefBox" Header="{x:Bind s:L.Z('参考图（可添加多张）','Reference images (multiple allowed)')}" IsReadOnly="True" />
+                        <Button Grid.Column="1" VerticalAlignment="Bottom" Content="{x:Bind s:L.Z('添加图片…','Add images…')}" Click="PickRef_Click" />
+                        <Button Grid.Column="2" VerticalAlignment="Bottom" Content="{x:Bind s:L.Z('模板','Templates')}" Click="PickTemplate_Click" />
+                        <Button Grid.Column="3" VerticalAlignment="Bottom" Click="ClearRef_Click" ToolTipService.ToolTip="{x:Bind s:L.Z('此卡不用参考图','No reference for this card')}" AutomationProperties.Name="{x:Bind s:L.Z('此卡不用参考图','No reference for this card')}"><SymbolIcon Symbol="Clear" /></Button>
+                        <Button Grid.Column="4" VerticalAlignment="Bottom" Click="InheritRef_Click" ToolTipService.ToolTip="{x:Bind s:L.Z('恢复为角色参考图','Use the character reference')}" AutomationProperties.Name="{x:Bind s:L.Z('恢复为角色参考图','Use the character reference')}"><SymbolIcon Symbol="Contact" /></Button>
                     </Grid>
+                    <ItemsControl x:Name="RefItems">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><ItemsWrapGrid Orientation="Horizontal" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="s:ReferenceFile">
+                                <Border Margin="0,0,8,6" Padding="8,4" CornerRadius="5"
+                                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="{x:Bind Name}" MaxWidth="220" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                        <Button Tag="{x:Bind Path}" Click="RemoveRef_Click" Padding="4,1"
+                                                ToolTipService.ToolTip="{x:Bind s:L.Z('移除此参考图','Remove this reference')}">
+                                            <SymbolIcon Symbol="Clear" />
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
 
                     <StackPanel Spacing="4">
                         <TextBlock Text="{x:Bind s:L.Z('主题色','Theme colours')}" />
                         <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
-                                   Text="{x:Bind s:L.Z('第一个颜色是背景与暗部的主色，其余是光效的点缀色。','The first colour sets the background and shadows; the others are accents for light and effects.')}" />
+                                   Text="{x:Bind s:L.Z('创建卡牌时从角色颜色池随机抽取一次并固定；除非你在这里手动修改，后续生成和重做不会改变。','One colour is sampled from the character pool when the card is created and then stays fixed unless you edit it here.')}" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <StackPanel x:Name="ThemeColors" Orientation="Horizontal" Spacing="12" />
                             <Button x:Name="AddThemeBtn" Click="AddTheme_Click" ToolTipService.ToolTip="{x:Bind s:L.Z('添加颜色','Add a colour')}" AutomationProperties.Name="{x:Bind s:L.Z('添加颜色','Add a colour')}">
@@ -136,18 +157,40 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <Button x:Name="PromptBtn" Click="GenPrompt_Click">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE945;" FontSize="14" />
-                                <TextBlock Text="{x:Bind s:L.Z('AI 生成提示词','Generate prompt with AI')}" />
-                            </StackPanel>
-                        </Button>
-                        <ProgressRing x:Name="PromptRing" IsActive="False" Width="20" Height="20" />
-                        <TextBlock x:Name="PromptNotes" Style="{StaticResource Hint}" VerticalAlignment="Center" MaxWidth="480" />
-                    </StackPanel>
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox x:Name="SceneModeBox" Header="{x:Bind s:L.Z('场景模式','Scene mode')}" HorizontalAlignment="Stretch"
+                                  DisplayMemberPath="Name" SelectedValuePath="Id"
+                                  ToolTipService.ToolTip="{x:Bind s:L.Z('自动会按画面构思选择；手动模式只影响 AI 提示词生成。','Auto follows the art concept; an override only affects AI prompt generation.')}" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Bottom">
+                            <Button x:Name="PromptBtn" Click="GenPrompt_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE945;" FontSize="14" />
+                                    <TextBlock Text="{x:Bind s:L.Z('AI 生成提示词','Generate prompt with AI')}" />
+                                </StackPanel>
+                            </Button>
+                            <ProgressRing x:Name="PromptRing" IsActive="False" Width="20" Height="20" />
+                            <TextBlock x:Name="PromptNotes" Style="{StaticResource Hint}" VerticalAlignment="Center" MaxWidth="480" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Grid>
                     <TextBox x:Name="PromptBox" Header="{x:Bind s:L.Z('图像提示词','Image prompt')}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="110"
-                             PlaceholderText="sts2 card art, my_hero card. ..." TextChanged="PromptParts_TextChanged" />
+                             PlaceholderText="sts2 illustration, my_hero. ..." TextChanged="PromptParts_TextChanged" />
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="PromptFeedbackBox" Header="{x:Bind s:L.Z('附加更改','Requested changes')}" AcceptsReturn="True"
+                                 TextWrapping="Wrap" MinHeight="58" TextChanged="PromptFeedback_TextChanged"
+                                 PlaceholderText="{x:Bind s:L.Z('例如：油灯更靠近镜头，保留一小簇正在收缩的火焰，让烟与火焰连续相接','e.g. Move the lamp closer; retain a small collapsing flame connected continuously to the smoke')}" />
+                        <Button x:Name="RevisePromptBtn" Grid.Column="1" VerticalAlignment="Bottom" IsEnabled="False" Click="RevisePrompt_Click"
+                                Content="{x:Bind s:L.Z('按评论重写','Rewrite with feedback')}" />
+                    </Grid>
+                    <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
+                               Text="{x:Bind s:L.Z('重写时，AI 会同时看到这张卡此前被放弃的提示词与已生成图片使用过的提示词，并把它们视为失败记录。','When rewriting, AI also sees this card’s replaced prompts and prompts used by its rendered images, marked as rejected history.')}" />
                     <Border Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="12,8">
                         <StackPanel Spacing="4">
@@ -234,7 +277,7 @@
             </Grid.RowDefinitions>
             <Border CornerRadius="8" Background="{ThemeResource ControlFillColorDefaultBrush}" Height="330">
                 <Grid Background="Transparent" PointerEntered="ArtBox_PointerEntered" PointerExited="ArtBox_PointerExited">
-                    <Image x:Name="ArtImage" Stretch="Uniform" />
+                    <s:LocalImage x:Name="ArtImage" DecodeWidth="900" Stretch="Uniform" />
                     <Image x:Name="LivePreview" Stretch="Uniform" Visibility="Collapsed" />
                     <TextBlock x:Name="ArtHint" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource Hint}"
                                Text="{x:Bind s:L.Z('还没有卡图','No art yet')}" />
@@ -260,7 +303,7 @@
                 <GridView.ItemTemplate>
                     <DataTemplate x:DataType="s:ImageRec">
                         <Grid Width="184" Height="138" CornerRadius="6" RightTapped="Variant_RightTapped" Background="{ThemeResource ControlFillColorDefaultBrush}">
-                            <Image Source="{x:Bind Thumb}" Stretch="UniformToFill" />
+                            <s:LocalImage Path="{x:Bind Path}" DecodeWidth="360" Stretch="UniformToFill" />
                             <TextBlock Text="{x:Bind FavGlyph, Mode=OneWay}" Foreground="Gold" Margin="6,2" FontSize="16" />
                             <Border Visibility="{x:Bind DraftBadge}" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="6"
                                     Padding="6,1" CornerRadius="4" Background="#B0000000">
@@ -273,6 +316,31 @@
         </Grid>
 
         <!-- ============ dialogs ============ -->
+        <ContentDialog x:Name="TemplateDialog" Grid.ColumnSpan="3"
+                       Title="{x:Bind s:L.Z('选择本地模板','Choose a local template')}"
+                       PrimaryButtonText="{x:Bind s:L.Z('使用选中模板','Use selected')}"
+                       CloseButtonText="{x:Bind s:L.Z('取消','Cancel')}" DefaultButton="Primary">
+            <StackPanel Width="720" Spacing="8">
+                <TextBox x:Name="TemplateSearchBox" PlaceholderText="{x:Bind s:L.Z('搜索模板…','Search templates…')}"
+                         TextChanged="TemplateSearchBox_TextChanged" />
+                <GridView x:Name="TemplateGrid" MaxHeight="480" SelectionMode="Multiple"
+                          SelectionChanged="TemplateGrid_SelectionChanged">
+                    <GridView.ItemTemplate>
+                        <DataTemplate x:DataType="s:ReferenceAsset">
+                            <Border Width="160" Padding="7" Margin="3" CornerRadius="7" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                <StackPanel Spacing="5">
+                                    <s:LocalImage Path="{x:Bind Path}" DecodeWidth="320" Height="112" Stretch="Uniform" />
+                                    <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind Detail}" Style="{StaticResource Hint}" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </GridView.ItemTemplate>
+                </GridView>
+            </StackPanel>
+        </ContentDialog>
+
         <ContentDialog x:Name="IdeasDialog" Grid.ColumnSpan="3"
                        Title="{x:Bind s:L.Z('AI 构思卡牌','Brainstorm cards')}"
                        PrimaryButtonText="{x:Bind s:L.Z('添加选中的卡牌','Add selected cards')}"

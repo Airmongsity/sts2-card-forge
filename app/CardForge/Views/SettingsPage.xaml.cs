@@ -9,10 +9,11 @@ namespace CardForge.Views;
 
 /// <summary>One entry of the "Provider" dropdown; OpenAI-compatible presets only differ in base URL and model.</summary>
 public record LlmPreset(string Id, string Name, string Provider, string BaseUrl, string Model, string KeyHint);
+public record ImagePreset(string Id, string Name, string Provider, string BaseUrl, string Model, string Extra, string KeyHint);
 
 public sealed partial class SettingsPage : Page
 {
-    static readonly LlmPreset[] Presets =
+    public static readonly LlmPreset[] Presets =
     [
         new("claude", "Claude (Anthropic)", "anthropic", "", "claude-opus-5",
             L.Z("在 console.anthropic.com 获取 API key。留空则使用环境变量 ANTHROPIC_API_KEY。", "Get a key at console.anthropic.com. Leave blank to use the ANTHROPIC_API_KEY environment variable.")),
@@ -26,6 +27,16 @@ public sealed partial class SettingsPage : Page
         new("lmstudio", L.Z("LM Studio（本地，免费）", "LM Studio (local, free)"), "openai", "http://127.0.0.1:1234/v1", "", L.Z("本地运行无需 key。", "No key needed.")),
         new("custom", L.Z("其他 OpenAI 兼容接口", "Other OpenAI-compatible API"), "openai", "", "", ""),
         new("template", L.Z("离线模板（不使用 AI）", "Offline template (no AI)"), "template", "", "", ""),
+    ];
+
+    public static readonly ImagePreset[] ImagePresets =
+    [
+        new("local", L.Z("本机 ComfyUI（Qwen-Image-2.1）", "Local ComfyUI (Qwen-Image-2.1)"), "comfy", "", "", "{}",
+            L.Z("使用已安装的本地权重，不产生 API 费用。", "Uses installed local weights with no API charges.")),
+        new("siliconflow", "SiliconFlow", "openai", "https://api.siliconflow.cn/v1", "Kwai-Kolors/Kolors", "{}",
+            L.Z("使用 SiliconFlow 原生图像接口；使用参考图时，请选支持图生图的模型（如 Qwen/Qwen-Image-Edit-2509）。", "Uses SiliconFlow's native image endpoint. For reference images, choose an image-to-image model such as Qwen/Qwen-Image-Edit-2509.")),
+        new("custom", L.Z("其他 OpenAI 兼容图像 API", "Other OpenAI-compatible image API"), "openai", "", "", "{}",
+            L.Z("可填写 Base URL（程序会追加 /images/generations）或完整的 /images/generations 端点。", "Enter a Base URL (the app appends /images/generations) or the full /images/generations endpoint.")),
     ];
 
     static readonly Option[] Profiles =
@@ -79,6 +90,7 @@ public sealed partial class SettingsPage : Page
     {
         InitializeComponent();
         PresetBox.ItemsSource = Presets;
+        ImagePresetBox.ItemsSource = ImagePresets;
         ProfileBox.ItemsSource = Profiles;
         PreviewBox.ItemsSource = PreviewModes;
         UiLangBox.ItemsSource = UiLangs;
@@ -151,6 +163,14 @@ public sealed partial class SettingsPage : Page
         ShowPreset(preset, fromSettings: true);
         EffortBox.SelectedItem = Str(_s["anthropic_effort"], "medium");
 
+        var imageProvider = Str(_s["image_provider"], "comfy");
+        var savedImagePreset = Str(_s["image_preset"]);
+        var imagePreset = ImagePresets.FirstOrDefault(p => p.Id == savedImagePreset && p.Provider == imageProvider) ??
+                          (savedImagePreset == "openai" && imageProvider == "openai" ? ImagePresets.First(p => p.Id == "custom") : null) ??
+                          ImagePresets.FirstOrDefault(p => p.Provider == imageProvider) ?? ImagePresets[0];
+        ImagePresetBox.SelectedItem = imagePreset;
+        ShowImagePreset(imagePreset, fromSettings: true);
+
         SizeBox.ItemsSource = Meta.Info.Sizes;
         SizeBox.SelectedValue = Str(gen["size_preset"], "sts2_card");
         VariantsBox.Value = Num(gen["variants"], 2);
@@ -208,9 +228,48 @@ public sealed partial class SettingsPage : Page
         if (!_loading && PresetBox.SelectedItem is LlmPreset p) ShowPreset(p, fromSettings: false);
     }
 
+    void ShowImagePreset(ImagePreset p, bool fromSettings)
+    {
+        bool cloud = p.Provider != "comfy";
+        ImageApiFields.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
+        ImageKeyHint.Text = p.KeyHint;
+        if (!cloud) return;
+        bool same = fromSettings || Str(_s["image_preset"]) == p.Id;
+        ImageEndpointBox.Text = same ? Str(_s["image_api_base_url"], p.BaseUrl) : p.BaseUrl;
+        ImageModelBox.Text = same ? Str(_s["image_api_model"], p.Model) : p.Model;
+        ImageKeyBox.Password = same ? Str(_s["image_api_key"]) : "";
+        ImageExtraBox.Text = same ? Str(_s["image_api_extra"], p.Extra) : p.Extra;
+        var quality = same ? Str(_s["image_api_quality"], "auto") : "auto";
+        ImageQualityBox.SelectedItem = new[] { "auto", "low", "medium", "high" }.Contains(quality) ? quality : "auto";
+    }
+
+    void ImagePresetBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_loading && ImagePresetBox.SelectedItem is ImagePreset p) ShowImagePreset(p, fromSettings: false);
+    }
+
+    async void SwitchLocalImage_Click(object sender, RoutedEventArgs e)
+    {
+        ImagePresetBox.SelectedItem = ImagePresets.First(p => p.Provider == "comfy");
+        if (!await SaveAsync()) return;
+        var steps = Setup.CreateSteps();
+        bool ready = true;
+        foreach (var step in steps.Where(s => !s.Optional)) ready &= await step.Check();
+        App.Main.MarkSetupDone(ready);
+        if (ready)
+            App.Main.ShowInfo(L.Z("已切换到本地模型。", "Switched to the local model."));
+        else
+        {
+            App.Main.ShowInfo(L.Z("已选择本地模型；请安装缺失的本地组件。",
+                                  "Local model selected; install the missing local components."));
+            App.Main.Navigate("setup");
+        }
+    }
+
     object BuildPatch()
     {
         var p = (LlmPreset)PresetBox.SelectedItem;
+        var image = (ImagePreset)ImagePresetBox.SelectedItem;
         var patch = new JsonObject
         {
             ["ui_language"] = ((Option)UiLangBox.SelectedItem).Id,
@@ -218,6 +277,8 @@ public sealed partial class SettingsPage : Page
             ["prompt_language"] = ((Option)PromptLangBox.SelectedItem).Id,
             ["llm_preset"] = p.Id,
             ["llm_provider"] = p.Provider,
+            ["image_preset"] = image.Id,
+            ["image_provider"] = image.Provider,
             ["comfy_profile"] = ((Option)ProfileBox.SelectedItem).Id,
             ["comfy_preview"] = ((Option)PreviewBox.SelectedItem).Id,
             ["comfy_autostart"] = AutostartSwitch.IsOn,
@@ -240,6 +301,14 @@ public sealed partial class SettingsPage : Page
                 ["cool_max"] = (int)CoolMaxBox.Value,
             },
         };
+        if (image.Provider != "comfy")
+        {
+            patch["image_api_base_url"] = ImageEndpointBox.Text.Trim();
+            patch["image_api_model"] = ImageModelBox.Text.Trim();
+            patch["image_api_key"] = ImageKeyBox.Password.Trim();
+            patch["image_api_quality"] = ImageQualityBox.SelectedItem as string ?? "auto";
+            patch["image_api_extra"] = string.IsNullOrWhiteSpace(ImageExtraBox.Text) ? "{}" : ImageExtraBox.Text.Trim();
+        }
         if (p.Provider == "anthropic")
         {
             patch["anthropic_model"] = ModelBox.Text.Trim();
@@ -261,6 +330,9 @@ public sealed partial class SettingsPage : Page
     {
         try
         {
+            if (ImagePresetBox.SelectedItem is ImagePreset { Provider: not "comfy" } &&
+                JsonNode.Parse(string.IsNullOrWhiteSpace(ImageExtraBox.Text) ? "{}" : ImageExtraBox.Text) is not JsonObject)
+                throw new FormatException(L.Z("图像 API 的额外参数必须是 JSON 对象。", "Image API extra parameters must be a JSON object."));
             var before = Str(_s["ui_language"]);
             _s = await Api.Put<JsonObject>("/api/settings", BuildPatch());
             _savedPatch = Snapshot();

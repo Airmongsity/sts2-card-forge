@@ -21,13 +21,13 @@
             </Border>
 
             <!-- prompt AI -->
-            <TextBlock Text="{x:Bind s:L.Z('提示词 AI','Prompt AI')}" Style="{StaticResource SectionHeader}" />
+            <TextBlock Text="{x:Bind s:L.Z('提示词 AI 测试','Prompt AI test')}" Style="{StaticResource SectionHeader}" />
             <Border Style="{StaticResource Panel}">
                 <StackPanel Spacing="10">
-                    <TextBlock Style="{StaticResource Hint}"
+                    <TextBlock Style="{StaticResource Hint}" Visibility="Collapsed"
                                Text="{x:Bind s:L.Z('用于把卡牌描述写成图像提示词、以及构思新卡牌。可用任何兼容 OpenAI 接口的服务（含本地 Ollama / LM Studio），或完全离线的模板模式。','Turns card descriptions into image prompts and brainstorms new cards. Works with Claude, any OpenAI-compatible service (including local Ollama / LM Studio), or a fully offline template mode.')}" />
-                    <ComboBox x:Name="PresetBox" Header="{x:Bind s:L.Z('服务商','Provider')}" MinWidth="320" SelectionChanged="PresetBox_SelectionChanged" DisplayMemberPath="Name" />
-                    <StackPanel x:Name="LlmFields" Spacing="10">
+                    <ComboBox x:Name="PresetBox" Visibility="Collapsed" Header="{x:Bind s:L.Z('服务商','Provider')}" MinWidth="320" SelectionChanged="PresetBox_SelectionChanged" DisplayMemberPath="Name" />
+                    <StackPanel x:Name="LlmFields" Spacing="10" Visibility="Collapsed">
                         <TextBox x:Name="BaseUrlBox" Header="Base URL" />
                         <Grid ColumnSpacing="10">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
@@ -63,6 +63,35 @@
                     <TextBlock Style="{StaticResource Hint}"
                                Text="{x:Bind s:L.Z('可用占位符：{trigger} 触发职业 · {concept} 画面构思 · {name} 卡名 · {effect} 卡牌效果 · {palette} 角色配色 · {character} 角色外观','Placeholders: {trigger} trigger class · {concept} art concept · {name} card name · {effect} card text · {palette} character colours · {character} character appearance')}" />
                     <Button Content="{x:Bind s:L.Z('恢复默认模板','Restore default template')}" Click="ResetTemplate_Click" />
+                </StackPanel>
+            </Border>
+
+            <!-- image renderer -->
+            <TextBlock Text="{x:Bind s:L.Z('图像生成服务','Image generation service')}" Style="{StaticResource SectionHeader}" Visibility="Collapsed" />
+            <Border Style="{StaticResource Panel}" Visibility="Collapsed">
+                <StackPanel Spacing="10">
+                    <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
+                               Text="{x:Bind s:L.Z('可继续使用本机 ComfyUI，也可把同一条出图队列交给云端 API。云端结果会立即下载到本地图库；API key 不会写入任务或图片记录。云端生成可能产生服务商费用。','Keep using local ComfyUI, or send the same generation queue to a cloud API. Cloud results are immediately downloaded into the local library; the API key is not stored in jobs or image records. Cloud generation may incur provider charges.')}" />
+                    <ComboBox x:Name="ImagePresetBox" Header="{x:Bind s:L.Z('出图服务商','Image provider')}" MinWidth="360"
+                              DisplayMemberPath="Name" SelectionChanged="ImagePresetBox_SelectionChanged" />
+                    <StackPanel x:Name="ImageApiFields" Spacing="10" Visibility="Collapsed">
+                        <TextBox x:Name="ImageEndpointBox" Header="{x:Bind s:L.Z('API 端点 / Base URL','API endpoint / Base URL')}" />
+                        <Grid ColumnSpacing="10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <TextBox x:Name="ImageModelBox" Header="{x:Bind s:L.Z('图像模型','Image model')}" />
+                            <ComboBox x:Name="ImageQualityBox" Grid.Column="1" Header="{x:Bind s:L.Z('质量','Quality')}" HorizontalAlignment="Stretch">
+                                <x:String>auto</x:String><x:String>low</x:String><x:String>medium</x:String><x:String>high</x:String>
+                            </ComboBox>
+                        </Grid>
+                        <PasswordBox x:Name="ImageKeyBox" Header="API key" />
+                        <TextBox x:Name="ImageExtraBox" Header="{x:Bind s:L.Z('额外请求参数（JSON，可选）','Extra request parameters (optional JSON)')}"
+                                 AcceptsReturn="True" TextWrapping="Wrap" FontFamily="Consolas" MinHeight="58" />
+                        <TextBlock x:Name="ImageKeyHint" Style="{StaticResource Hint}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <Button HorizontalAlignment="Left" Content="{x:Bind s:L.Z('切换回本地模型','Switch back to local model')}"
+                                Click="SwitchLocalImage_Click" />
+                        <InfoBar Severity="Informational" IsOpen="True" IsClosable="False"
+                                 Message="{x:Bind s:L.Z('云端模式不使用本地 LoRA、CFG 或采样步数；尺寸、提示词、负面提示词和种子会在服务支持时传入。OpenAI 兼容端点会在存在参考图或起始图时尝试 /images/edits；百炼预设目前仅支持文生图。','Cloud mode does not use the local LoRA, CFG, or sampling steps. Size, prompt, negative prompt, and seed are sent when supported. OpenAI-compatible endpoints try /images/edits when a reference or start image is present; the DashScope preset is currently text-to-image only.')}" />
+                    </StackPanel>
                 </StackPanel>
             </Border>
 

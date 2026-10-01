@@ -25,7 +25,8 @@
                         PaneDisplayMode="Left" OpenPaneLength="200" SelectionChanged="Nav_SelectionChanged">
             <NavigationView.MenuItems>
                 <NavigationViewItem Tag="cards" Content="{x:Bind s:L.Z('卡牌','Cards')}" Icon="Library" />
-                <NavigationViewItem Tag="characters" Content="{x:Bind s:L.Z('MOD 角色','Characters')}" Icon="Contact" />
+                <NavigationViewItem Tag="characters" Content="{x:Bind s:L.Z('角色','Characters')}" Icon="Contact" />
+                <NavigationViewItem Tag="templates" Content="{x:Bind s:L.Z('本地模板','Templates')}" Icon="Pictures" />
                 <NavigationViewItem Tag="queue" Content="{x:Bind s:L.Z('生成队列','Queue')}">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE9D5;" /></NavigationViewItem.Icon>
                     <NavigationViewItem.InfoBadge>
@@ -35,7 +36,10 @@
                 <NavigationViewItem Tag="gallery" Content="{x:Bind s:L.Z('图库','Gallery')}" Icon="Pictures" />
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
-                <NavigationViewItem Tag="setup" Content="{x:Bind s:L.Z('环境安装','Setup')}">
+                <NavigationViewItem Tag="logs" Content="{x:Bind s:L.Z('日志','Logs')}">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE9D2;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Tag="setup" Content="{x:Bind s:L.Z('配置','Configuration')}">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE896;" /></NavigationViewItem.Icon>
                     <NavigationViewItem.InfoBadge>
                         <InfoBadge x:Name="SetupBadge" Visibility="Collapsed" Style="{StaticResource AttentionIconInfoBadgeStyle}" />

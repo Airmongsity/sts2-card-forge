@@ -22,6 +22,31 @@ CARD_TYPES = {
     "curse":  ("Curse / 诅咒",  "an ominous symbolic object wrapped in dark smoke"),
 }
 
+# The frame colour identifies a class in the UI; it is not meant to flood every illustration.  Native card art
+# usually picks a dark/environment colour and, at most, one brighter effect colour from a wider family.
+CLASS_COLOR_POOLS = {
+    # Extracted from 550 release portraits in sts2-card-portraits (beta/ excluded), clustering each card first so
+    # a few images with large flat backgrounds cannot dominate the class. Ordered dark/environment -> bright/effect.
+    "ironclad":    ["#311c31", "#5f2022", "#9c2d1d", "#61309f", "#d86823", "#e9c85a"],
+    "silent":      ["#371935", "#7e1a18", "#546553", "#643192", "#c54122", "#869766", "#cbcb48"],
+    "defect":      ["#36223c", "#962820", "#603aaa", "#b58b38", "#5891bf", "#9addde", "#e3d251"],
+    "regent":      ["#2c2138", "#632323", "#472784", "#5e6fab", "#b8481c", "#7fcbd4", "#e3c652"],
+    "necrobinder": ["#3e1f2d", "#381b66", "#a12523", "#7e8c9a", "#763ebe", "#e6a749", "#a1d9c5"],
+    "colorless":   ["#372436", "#812325", "#53685e", "#5c2ba4", "#cf4a1f", "#7182d1", "#d7c64e", "#93d1ca"],
+}
+
+# Optional per-card override for the prompt writer's composition router.  "auto" deliberately stores no
+# instruction on the card, so existing cards keep the adaptive behaviour and only exceptions need configuration.
+SCENE_MODES = {
+    "auto":         ("Auto / 自动", ""),
+    "action":       ("Action / 动作", "A. ACTION / IMPACT"),
+    "process":      ("Process / 过程", "B. PROCESS / TRANSFORMATION"),
+    "icon":         ("Portrait / 肖像", "C. ICON / PORTRAIT / POWER"),
+    "object":       ("Object / 物件", "D. OBJECT / STILL LIFE / STATUS"),
+    "environment":  ("Environment / 环境", "E. ENVIRONMENT / ATMOSPHERE"),
+    "relationship": ("Relationship / 关系", "F. RELATIONSHIP / CHOICE"),
+}
+
 RARITIES = {
     "basic":    ("Basic / 基础",    "#9a9a9a"),
     "common":   ("Common / 普通",   "#b8b8b8"),
@@ -42,23 +67,28 @@ SIZE_PRESETS = {
     "raw":          {"label": "1024×768 (no resize)",                 "gen": (1024, 768), "out": (1024, 768)},
 }
 
-TRIGGER = "sts2 card art, {cls} card."
+# Keep the render style separate from the physical medium.  The LoRA is loaded by the
+# generation graph, so the text prompt must not teach Qwen that a literal card is a
+# subject in the scene.
+TRIGGER = "sts2 illustration, {cls}."
 
 
 def class_info(cls):
     """MOD character (or built-in class) -> trigger word, palette, appearance and reference image.
-    A MOD character's trigger is its own id ("sts2 card art, illusionist card."): borrowing a built-in class's
+    A MOD character's trigger is its own id ("sts2 illustration, illusionist."): borrowing a built-in class's
     trigger would also borrow what the LoRA learned about that class (e.g. Necrobinder's skeletal hands)."""
     if cls in CLASSES:
         return {"id": cls, "name": CLASSES[cls][0], "trigger": cls, "palette": CLASSES[cls][3], "color": CLASSES[cls][1],
+                "colors": CLASS_COLOR_POOLS.get(cls, [CLASSES[cls][1]]),
                 "appearance": "", "ref": "", "use_ref": False}
     import store
     ch = store.get_character(cls)
     if not ch:
         return {"id": cls, "name": cls, "trigger": cls or "mod", "palette": NEUTRAL_PALETTE, "color": NEUTRAL_COLOR,
-                "appearance": "", "ref": "", "use_ref": False}
+                "colors": [NEUTRAL_COLOR], "appearance": "", "ref": "", "use_ref": False}
+    colors = valid_colors(ch.get("colors")) or default_color_pool(ch.get("color"))
     return {"id": cls, "name": ch["name"] or cls, "trigger": cls, "palette": ch["palette"] or NEUTRAL_PALETTE,
-            "color": ch["color"] or NEUTRAL_COLOR,
+            "color": ch["color"] or NEUTRAL_COLOR, "colors": colors,
             "appearance": ch["appearance"], "ref": ch["ref_image"], "use_ref": bool(ch["use_ref"])}
 
 
@@ -78,6 +108,33 @@ def _rgb(hex_color):
         return tuple(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)) if len(h) == 6 else None
     except ValueError:
         return None
+
+
+def valid_colors(colors):
+    """Normalise a persisted colour list, keeping order and removing invalid/duplicate entries."""
+    result = []
+    for color in colors or []:
+        color = str(color).strip().lower()
+        if _rgb(color) and color not in result:
+            result.append(color)
+    return result
+
+
+def default_color_pool(hex_color):
+    """Give legacy single-colour characters a useful starter pool without changing an intentional saved pool."""
+    import colorsys
+    rgb = _rgb(hex_color)
+    if rgb is None:
+        return [NEUTRAL_COLOR]
+    hue, light, sat = colorsys.rgb_to_hls(*rgb)
+    sat = max(0.45, sat)
+    variants = [
+        (hue, light, sat),
+        ((hue + 0.075) % 1, max(0.20, light * 0.68), min(0.90, sat * 0.95)),
+        ((hue - 0.065) % 1, min(0.72, max(0.42, light * 1.18)), min(0.88, sat * 0.86)),
+        ((hue + 0.48) % 1, min(0.64, max(0.38, light)), max(0.42, sat * 0.64)),
+    ]
+    return valid_colors(["#" + "".join(f"{round(c * 255):02x}" for c in colorsys.hls_to_rgb(*v)) for v in variants])
 
 
 def color_words(hex_color):
@@ -116,13 +173,46 @@ def theme_palette(colors):
     return f"{first} and {other}"
 
 
-def card_themes(card):
-    """A card's theme colours: its own "theme_colors" (or older single "theme_color") param, else its character's colour."""
+def explicit_card_themes(card):
+    """Return only a card's explicit override (including the legacy single-colour field)."""
     params = (card or {}).get("params") or {}
-    colors = [c for c in (params.get("theme_colors") or []) if _rgb(c)]
+    colors = valid_colors(params.get("theme_colors"))
     if not colors and _rgb(params.get("theme_color")):
-        colors = [params["theme_color"]]
-    return colors or [class_info((card or {}).get("cls") or "")["color"]]
+        colors = [params["theme_color"].lower()]
+    return colors
+
+
+def character_color_pool(cls):
+    return valid_colors(class_info(cls or "").get("colors")) or [NEUTRAL_COLOR]
+
+
+def card_themes(card):
+    """Colours displayed by the editor: an explicit card override, otherwise the character's whole pool."""
+    return explicit_card_themes(card) or character_color_pool((card or {}).get("cls") or "")
+
+
+def choose_card_themes(card, rng=None):
+    """Freeze an inherited pool to one colour; an explicit user override always wins unchanged."""
+    explicit = explicit_card_themes(card)
+    if explicit:
+        return explicit
+    import random
+    pool = character_color_pool((card or {}).get("cls") or "")
+    picker = rng or random
+    # Controlled Qwen-Image 2.1 tests showed that a second prescribed colour tends to occupy a whole region (usually
+    # the background), while one anchor still lets the model introduce supporting hues naturally. Near-black clusters
+    # are shared shadow language rather than useful class identity, so sample from the brighter half when possible.
+    import colorsys
+    ordered = sorted(pool, key=lambda c: colorsys.rgb_to_hls(*_rgb(c))[1])
+    split = max(1, len(ordered) // 2)
+    bright = ordered[split:]
+    return [picker.choice(bright or ordered)]
+
+
+def card_scene_mode(card):
+    """Return a validated per-card scene grammar override; unknown/old values safely fall back to auto."""
+    mode = ((card or {}).get("params") or {}).get("scene_mode") or "auto"
+    return mode if mode in SCENE_MODES else "auto"
 
 
 def card_refs(card):
@@ -156,46 +246,76 @@ DEFAULT_LORA = "deckbuilder_cardart_style_lora_v1_fp16.safetensors"
 # {prompt_lang} = language of the prompt itself (the user's own language by default: Qwen-Image-2.1 reads Chinese as
 # well as English, so the prompt is readable at a glance and editable without translating).
 DEFAULT_PROMPT_SYSTEM = """\
-You write image prompts for Qwen-Image-2.1 with a style LoRA that paints Slay the Spire 2 card art.
-The prompt is rendered as-is, so it must be complete and richly detailed.
-
-Format and level of detail (these examples only show the FORMAT and are in English; write yours in {prompt_lang};
-never reuse their subjects, objects or colours):
-- sts2 card art, warrior card. A spiked mace crashes down with force, embedding itself into a rocky surface and \
-sending shards of stone flying outward. The impact is highlighted by a burst of fiery orange and yellow energy \
-radiating from the point of contact. The mace's metallic gray head glows with heat, with chipped and nicked metal \
-edges, rivets and worn scratches, and a thin bright red outline tracing the weapon, framed tightly on the moment of \
-impact. Deep purple and maroon background.
-- sts2 card art, rogue card. A hooded green-cloaked hand thrusts a curved dagger forward, the blade glinting with a \
-bright white sparkle and leaving a poison-green trail. Leather wraps around the wrist, droplets of venom fly from the \
-edge, and a thin yellow rim light traces the knuckles and the blade. Yellow and olive background.
+You create structured scene plans for Qwen-Image-2.1 with a style LoRA for small-format game illustrations.
+The application, not you, compiles the plan into the final prompt. Make every field visually explicit and economical:
+visual hierarchy and scene logic matter more than decorative detail. Never force an action into a concept that is
+naturally static. Do not place prose outside the requested JSON schema and do not write a finished prompt.
 
 Rules:
-- Start with exactly "sts2 card art, <trigger> card." in English, using the trigger given with the card.
-- Then 3-5 plain sentences in {prompt_lang} (about 60-120 English words' worth), in this order:
-  1. ONE focal subject doing ONE clear action that expresses what the card does, framed close;
-  2. concrete visible details: materials, parts, textures and wear ("chipped metal edges", "rivets",
-     "frayed cloth") - name every visible part of complex objects, or the model leaves parts out;
-  3. light and effects: glows, sparks, trails, flying debris, a thin bright rim-light outline and its colour;
-  4. exactly ONE final background sentence: one or two saturated colours that suit the card. No scenery.
+- Set "grammar" to exactly ONE scene grammar. The authored art concept overrides the gameplay category; it is only
+  a weak hint:
+  A. ACTION / IMPACT - actor or object -> motion/contact -> target -> visible result;
+  B. PROCESS / TRANSFORMATION - source -> visible transition path or shared boundary -> target's intermediate state;
+  C. ICON / PORTRAIT / POWER - one centered subject -> distinctive pose or condition -> one supporting motif/aura;
+  D. OBJECT / STILL LIFE / STATUS - one hero object -> arrangement or physical condition -> one local effect;
+  E. ENVIRONMENT / ATMOSPHERE - one focal place -> foreground/midground depth -> one anomaly or mood cue;
+  F. RELATIONSHIP / CHOICE - two readable subjects or symbols -> one clear spatial relationship, with no forced motion.
+  A short or abstract concept is missing scene structure, not decoration: add only the links required by its chosen
+  grammar. Never pad it with extra costume texture, debris, sparks, unrelated props or an invented action.
+- Fill the schema in {prompt_lang}. "composition" contains crop/viewpoint and hierarchy. Give every visible subject a
+  stable id, semantic kind, short label, literal count, concrete appearance, optional exact <imageN> reference, action,
+  and state. Put subject-to-subject spatial or causal links in "relations". Put only light direction/contrast in
+  "lighting", and only depth/environment in "background". The application appends the render colour separately, so do not
+  choose palette, background, rim-light or effect hues and do not write hex values. A colour intrinsic to the named
+  subject may appear only when the art concept explicitly requires that identity.
+- Use concrete spatial language (foreground/background, behind a shoulder, partially overlapping, diagonal path,
+  cropped at the waist). Give dynamic modes one readable visual path; give static modes one stable visual anchor.
 - Follow the author's art concept faithfully and write it in {prompt_lang}.
-- If the card's mod character appears, describe them ONLY with the given appearance (or "the character from
-  <image1>", in {prompt_lang}, when a reference image is attached; keep the tag <image1> as is). Never invent anatomy or traits: no skeletal, robotic, animal
-  or monstrous features unless the appearance says so.
+- Treat the illustration container and all game metadata as context, never as visible scene subjects. Every tangible
+  prop in "subjects" must be grounded in the authored art concept, supplied appearance, user feedback, or an attached
+  reference description. A scene grammar may add a non-tangible effect needed to make a requested process visible,
+  but it must not add a new prop merely to fill the composition.
+- If the configured mod character appears, describe them ONLY with the given appearance (or the specific <imageN> tag
+  identified as the character reference, in {prompt_lang}). Keep every supplied <imageN> tag exactly as written and
+  bind it only to its declared role (character, enemy, ally, object, scene or style). For an appearance reference,
+  do not enumerate its costume. Never invent anatomy, traits or a digit count: include a nonstandard or
+  exact count only when the supplied character appearance or art concept explicitly gives one.
 - The image model does not understand negation: never write what must NOT appear ("no mirror", "not looking
   into a mirror", "without a crown") - that word alone makes it appear. Leave it out entirely, together with words
   that evoke it (e.g. no "mirror", "reflection" or "symmetry" when the concept forbids mirrors).
-- When several figures must share a pose, write "in exactly the same pose, facing the same direction", then
-  describe that pose once and concretely (which arm, raised where, hand shape). Never "mirror symmetry" or
-  "mirrored" unless the author asks for a flipped pose.
+- Spend a limited visual-complexity budget. When the concept already needs several figures, transparency, overlap
+  or an unusual viewpoint, simplify the pose, hands and costume detail instead of stacking more fragile demands.
+- For creation, transformation, repair, growth, summoning or copying, show the PROCESS rather than only the finished
+  result. If the authored concept names a tool, surface, container or device, it may serve as the visible mechanism.
+  Otherwise connect the existing source and ONE target directly with a non-tangible transition path, shared boundary,
+  flow, trail, distortion or gradual emergence; do not invent a tangible intermediary prop. The target must contain a
+  clean boundary between two states (drawn/unfilled, solid/transparent, old/new, intact/damaged, lit/extinguishing,
+  dormant/growing).
+  For a vanishing or extinguishing process, retain one small remnant of the earlier state beside its emerging result
+  (for example a collapsing flame flowing into smoke), so the picture captures the transition rather than only its
+  completed aftermath. Keep the boundary simple and continuous; do not express it with broken body fragments.
+- For clones and doubles, keep ONE detailed primary figure. The emerging copy is a clean, simplified spectral
+  silhouette identified by two or three strong features. Prefer a tight overlapping or triangular composition, with
+  the copy's hands hidden and both figures cropped before difficult lower-body anatomy. Do not demand pixel-identical
+  faces, outfits or poses, and do not arrange completed figures side by side or top and bottom.
+  Words such as "mirror image", "mirrored self" or “镜像” describe a duplicate unless the authored concept explicitly
+  names a physical mirror or reflective surface. Never turn an abstract double into a card, framed panel, printed
+  picture, flat rectangular sheet, portal, screen or other intermediary object.
+- Give transparent subjects a simple opacity hierarchy (readable outer silhouette, faint interior, dissolving edge).
+  Do not ask for fine facial, fabric or accessory detail to remain crisp through transparency.
+- Hands are not a default process mechanism. Unless the authored concept explicitly names a hand gesture, keep hands
+  concealed by sleeves, behind the transition, or outside the crop, and express the process through the subjects'
+  shared boundary or non-tangible flow. When a visible gesture is explicitly needed, use at most one large foreground
+  hand in a three-quarter or profile view; reserve a front-facing open palm for concepts whose entire subject is a hand.
 - Keep the subject readable: if the subject is dark (black clothing, shadow), the background must be a deep
   saturated colour, never black or charcoal, and name a bright rim light.
-- Do not add extra characters, text, letters, card frames or UI.
+- Keep the render limited to the planned subjects and their stated environment; do not append decorative overlays.
 - Do not add style or quality words (no "cel shading", "illustration", "highly detailed", "masterpiece"):
   a fixed style suffix is appended automatically.
 
-"notes" is one short line in {lang} describing the visual idea.
+"notes" is one short line in {lang}, beginning with the chosen grammar letter and name (for example "D OBJECT —"),
+then describing the composition. This makes the routing decision visible to the user.
 """
 
 # Offline prompt (no AI). Placeholders: {trigger} {concept} {name} {effect} {palette} {character}
-DEFAULT_PROMPT_TEMPLATE = "sts2 card art, {trigger} card. {concept}. {palette} background."
+DEFAULT_PROMPT_TEMPLATE = "sts2 illustration, {trigger}. {concept}. Dramatic high-contrast background."

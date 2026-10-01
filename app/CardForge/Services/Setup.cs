@@ -115,9 +115,11 @@ public static class Setup
         var (proxy, _) = await NetProxy.Resolve();
         if (_http == null || _httpProxy != proxy)
         {
+            var old = _http;
             _http = new HttpClient(await NetProxy.Handler()) { Timeout = Timeout.InfiniteTimeSpan };
             _http.DefaultRequestHeaders.UserAgent.ParseAdd("STS2CardForge/1.0");
             _httpProxy = proxy;
+            old?.Dispose();
         }
         return _http;
     }
@@ -207,11 +209,19 @@ public static class Setup
             Id = "deps",
             Title = L.Z("后端依赖", "Backend packages"),
             Description = L.Z("安装到 ComfyUI 的 Python 中：anthropic（Claude 提示词生成）。", "Installed into ComfyUI's Python: anthropic (Claude prompt generation)."),
-            Check = async () => File.Exists(AppPaths.Python) && (await Run(AppPaths.Python, ["-s", "-c", "import anthropic"], null, null, default)).Code == 0,
+            Check = async () =>
+            {
+                if (!File.Exists(AppPaths.Python)) return false;
+                if (AppPaths.LoadSettings()["deps_ok"]?.GetValue<string>() == DepsKey) return true;
+                var ok = (await Run(AppPaths.Python, ["-s", "-c", "import anthropic"], null, null, default)).Code == 0;
+                if (ok) AppPaths.SaveSettings(s => s["deps_ok"] = DepsKey);
+                return ok;
+            },
             Install = async (step, ct) =>
             {
                 step.Report(L.Z("pip 安装中…", "pip installing…"));
                 await Pip(step, ct, "-r", Path.Combine(AppPaths.Backend, "requirements.txt"));
+                AppPaths.SaveSettings(s => s["deps_ok"] = DepsKey);
             },
         },
         new()
@@ -331,6 +341,7 @@ public static class Setup
     }
 
     static string GpuTestKey => $"{AppPaths.ComfyRoot}|{Gpu.Package}";
+    static string DepsKey => $"{AppPaths.Python}|{File.GetLastWriteTimeUtc(Path.Combine(AppPaths.Backend, "requirements.txt")).Ticks}";
 
     // ---- GPU self-test ---------------------------------------------------------------------------
 

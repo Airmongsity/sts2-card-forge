@@ -18,13 +18,19 @@ public sealed partial class CardsPage : Page
     readonly List<Card> _all = new();
     readonly ObservableCollection<Card> _visible = new();
     readonly ObservableCollection<ImageRec> _images = new();
+    readonly ObservableCollection<ReferenceFile> _referenceFiles = new();
+    readonly List<ReferenceAsset> _templateAssets = new();
+    readonly HashSet<string> _templateSelection = new(StringComparer.OrdinalIgnoreCase);
+    bool _updatingTemplateSelection;
     readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(2) };
     JsonObject _gen = new();
+    string _imageProvider = "comfy";
     Card? _current;
     string _project = "default";
     ImageRec? _menuImage;
     HashSet<int> _activeJobs = new();
     bool _loadingEditor;
+    bool _polling;
 
     static string NoLora => L.Z("不使用 LoRA", "No LoRA");
 
@@ -40,7 +46,8 @@ public sealed partial class CardsPage : Page
         _imageMenu = CreateImageMenu();
         CardList.ItemsSource = _visible;
         VariantGrid.ItemsSource = _images;
-        _timer.Tick += async (_, _) => await Poll();
+        RefItems.ItemsSource = _referenceFiles;
+        _timer.Tick += async (_, _) => await PollSafely();
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -50,9 +57,15 @@ public sealed partial class CardsPage : Page
             await Meta.Load();   // MOD characters may have changed
             var settings = await Api.Get<JsonObject>("/api/settings");
             _gen = settings["gen"]!.AsObject();
+            _imageProvider = settings["image_provider"]?.GetValue<string>() ?? "comfy";
+            bool local = _imageProvider == "comfy";
+            DraftBtn.IsEnabled = local;
+            DraftCountBox.IsEnabled = DraftFastBox.IsEnabled = local;
+            LoraBox.IsEnabled = StrengthBox.IsEnabled = CfgBox.IsEnabled = StepsBox.IsEnabled = local;
             ClassBox.ItemsSource = Meta.Info.Classes.ToList();
             IdeaClassBox.ItemsSource = Meta.Info.Classes.ToList();
             TypeBox.ItemsSource = Meta.Info.Types;
+            SceneModeBox.ItemsSource = Meta.Info.SceneModes;
             RarityBox.ItemsSource = Meta.Info.Rarities;
             SizeBox.ItemsSource = Meta.Info.Sizes;
             LoraBox.ItemsSource = new[] { NoLora }.Concat(Meta.Info.Loras).ToList();
@@ -103,6 +116,7 @@ public sealed partial class CardsPage : Page
             c.Pending = f.Pending;
             c.SelectedImage = f.SelectedImage;
             c.SelectedCreated = f.SelectedCreated;
+            c.SelectedPath = f.SelectedPath;
             if (c != _current) c.Prompt = f.Prompt;
         }
     }
@@ -162,8 +176,10 @@ public sealed partial class CardsPage : Page
         EmptyHint.Visibility = card == null ? Visibility.Visible : Visibility.Collapsed;
         _images.Clear();
         ArtImage.Source = null;
+        ArtImage.Path = "";
         ArtHint.Visibility = Visibility.Visible;
         PromptNotes.Text = SavedText.Text = CardJobText.Text = "";
+        PromptFeedbackBox.Text = "";
         _runningJob = null;
         AbortBtn.Visibility = Visibility.Collapsed;
         UpdateAbortOverlay();
@@ -179,6 +195,8 @@ public sealed partial class CardsPage : Page
         RarityBox.SelectedValue = card.Rarity;
         DescBox.Text = card.Description;
         ConceptBox.Text = card.Concept;
+        SceneModeBox.SelectedValue = card.Params["scene_mode"]?.GetValue<string>() ?? "auto";
+        if (SceneModeBox.SelectedItem == null) SceneModeBox.SelectedValue = "auto";
         PromptBox.Text = card.Prompt;
         UpdatePromptPlaceholder();
         NegativeBox.Text = string.IsNullOrWhiteSpace(card.Negative) ? DefaultNegative : card.Negative;
@@ -203,12 +221,13 @@ public sealed partial class CardsPage : Page
         StepsBox.Value = Num(Param("steps"), 25);
         DenoiseBox.Value = Num(Param("denoise"), 0.55);
         _inheritRef = !card.Params.ContainsKey("refs");
-        RefBox.Text = _inheritRef ? CharacterRef(card.Cls) : card.Params["refs"]!.AsArray().FirstOrDefault()?.GetValue<string>() ?? "";
+        _refAssets = (card.Params["ref_assets"] as JsonArray)?.DeepClone().AsArray() ?? new JsonArray();
+        SetRefs(_inheritRef ? [CharacterRef(card.Cls)] :
+            (card.Params["refs"] as JsonArray)?.Select(x => x?.ToString() ?? "") ?? []);
         InitBox.Text = card.Params["init"]?.GetValue<string>() ?? "";
         var own = (card.Params["theme_colors"] as JsonArray)?.Select(n => n?.ToString() ?? "").Where(IsHex).ToList() ?? [];
         if (own.Count == 0 && card.Params["theme_color"]?.ToString() is { } one && IsHex(one)) own.Add(one);
-        _inheritTheme = own.Count == 0;
-        SetThemes(_inheritTheme ? [CharacterColor(card.Cls)] : own);
+        SetThemes(own.Count > 0 ? own : [CharacterColors(card.Cls)[Rng.Next(CharacterColors(card.Cls).Count)]]);
         _loadingEditor = false;
         PromptParts_TextChanged(PromptBox, null!);
     }
@@ -249,13 +268,21 @@ public sealed partial class CardsPage : Page
         Keep("steps", (int)StepsBox.Value);
         Keep("denoise", Math.Round(DenoiseBox.Value, 2));
         Keep("style_suffix", SuffixBox.Text.Trim());
-        if (!_inheritTheme) p["theme_colors"] = new JsonArray(_themes.Where(IsHex).Select(h => (JsonNode)JsonValue.Create(h)).ToArray());
+        var sceneMode = SceneModeBox.SelectedValue as string ?? "auto";
+        if (sceneMode != "auto") p["scene_mode"] = sceneMode;
+        if (c.Params["prompt_history"] is JsonArray history && history.Count > 0)
+            p["prompt_history"] = history.DeepClone();
+        p["theme_colors"] = new JsonArray(_themes.Where(IsHex).Select(h => (JsonNode)JsonValue.Create(h)).ToArray());
         if (long.TryParse(SeedBox.Text.Trim(), out var seed))
         {
             p["seed"] = seed;
             if (_seedIndex != null && seed == _seedIndexSeed) p["seed_index"] = _seedIndex;
         }
-        if (!_inheritRef) p["refs"] = RefBox.Text.Length > 0 ? new JsonArray(RefBox.Text) : new JsonArray();
+        if (!_inheritRef)
+        {
+            p["refs"] = new JsonArray(_refs.Select(r => (JsonNode)JsonValue.Create(r)).ToArray());
+            if (_refAssets.Count > 0) p["ref_assets"] = _refAssets.DeepClone();
+        }
         if (InitBox.Text.Length > 0) p["init"] = InitBox.Text;
         c.Params = p;
     }
@@ -280,7 +307,7 @@ public sealed partial class CardsPage : Page
     bool RequireCharacter()
     {
         if (Meta.Info.Classes.Count > 0) return true;
-        App.Main.ShowError(L.Z("请先在“MOD 角色”页创建角色。", "Create a character on the Characters page first."));
+        App.Main.ShowError(L.Z("请先在“角色”页创建角色。", "Create a character on the Characters page first."));
         App.Main.Navigate("characters");
         return false;
     }
@@ -288,11 +315,35 @@ public sealed partial class CardsPage : Page
     void UpdatePromptPlaceholder()
     {
         var trigger = ClassBox.SelectedValue as string ?? "my_hero";
-        PromptBox.PlaceholderText = $"sts2 card art, {trigger} card. " +
+        PromptBox.PlaceholderText = $"sts2 illustration, {trigger}. " +
                                     L.Z("描述画面内容与配色，或点上方“AI 生成提示词”", "Describe the subject and colours, or click Generate prompt with AI");
     }
 
     bool _inheritRef = true;
+    readonly List<string> _refs = new();
+    JsonArray _refAssets = new();
+
+    void SetRefs(IEnumerable<string> refs)
+    {
+        _refs.Clear();
+        _refs.AddRange(refs.Where(r => !string.IsNullOrWhiteSpace(r)).Distinct(StringComparer.OrdinalIgnoreCase));
+        _referenceFiles.Clear();
+        foreach (var path in _refs) _referenceFiles.Add(new ReferenceFile { Path = path });
+        RefBox.Text = _refs.Count == 0
+            ? L.Z("未选择参考图", "No reference images")
+            : L.Z($"已选择 {_refs.Count} 张", $"{_refs.Count} selected");
+    }
+
+    void RemoveRef_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not string path) return;
+        var index = _refs.FindIndex(item => string.Equals(item, path, StringComparison.OrdinalIgnoreCase));
+        if (index < 0) return;
+        _refs.RemoveAt(index);
+        if (index < _refAssets.Count) _refAssets.RemoveAt(index);
+        _inheritRef = false;
+        SetRefs(_refs.ToList());
+    }
 
     static string CharacterRef(string? cls) =>
         Meta.Info.Classes.FirstOrDefault(c => c.Id == cls) is { UseRef: true, Ref: { Length: > 0 } r } ? r : "";
@@ -309,21 +360,26 @@ public sealed partial class CardsPage : Page
     void ClassBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         UpdatePromptPlaceholder();
-        if (_inheritRef && !_loadingEditor) RefBox.Text = CharacterRef(ClassBox.SelectedValue as string);
-        if (_inheritTheme && !_loadingEditor) SetThemes([CharacterColor(ClassBox.SelectedValue as string)]);
+        if (_inheritRef && !_loadingEditor) SetRefs([CharacterRef(ClassBox.SelectedValue as string)]);
     }
 
     // ---- theme colour: defaults to the character colour; the card keeps its own once changed ----------------
 
     // Several colours are allowed: the first dominates (background, shadows), the rest are accents (glow, effects).
 
-    bool _inheritTheme = true;
     readonly List<string> _themes = new();
-    const int MaxThemes = 4;
+    const int MaxThemes = 8;
     static readonly Random Rng = new();
 
     static string CharacterColor(string? cls) =>
         Meta.Info.Classes.FirstOrDefault(c => c.Id == cls)?.Color is { Length: > 0 } c ? c : "#2a8a8a";
+
+    static List<string> CharacterColors(string? cls)
+    {
+        var option = Meta.Info.Classes.FirstOrDefault(c => c.Id == cls);
+        return option?.Colors.Where(IsHex).Distinct(StringComparer.OrdinalIgnoreCase).ToList() is { Count: > 0 } colors
+            ? colors : [CharacterColor(cls)];
+    }
 
     static bool IsHex(string s) => System.Text.RegularExpressions.Regex.IsMatch(s, "^#[0-9a-fA-F]{6}$");
     static string Hex(Windows.UI.Color c) => $"#{c.R:x2}{c.G:x2}{c.B:x2}";
@@ -364,7 +420,6 @@ public sealed partial class CardsPage : Page
             var hex = Hex(a.NewColor);
             if (i >= _themes.Count || hex == _themes[i]) return;   // programmatic sets echo back here
             _themes[i] = hex;
-            _inheritTheme = false;
             swatch.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(a.NewColor);
             ToolTipService.SetToolTip(button, Tip());
         };
@@ -375,7 +430,6 @@ public sealed partial class CardsPage : Page
             {
                 button.Flyout.Hide();
                 _themes.RemoveAt(i);
-                _inheritTheme = false;
                 RebuildThemes();
             };
             content.Children.Add(remove);
@@ -397,14 +451,12 @@ public sealed partial class CardsPage : Page
     {
         var n = Math.Max(1, _themes.Count);
         SetThemes(Enumerable.Range(0, n).Select(i => n == 1 ? RandomColor() : i == 0 ? RandomColor(0.25, 0.5) : RandomColor(0.75, 1.0)));
-        _inheritTheme = false;
     }
 
     void AddTheme_Click(object sender, RoutedEventArgs e)
     {
         if (_themes.Count >= MaxThemes) return;
         _themes.Add(RandomColor(0.75, 1.0));
-        _inheritTheme = false;
         RebuildThemes();
         // open the new colour's picker straight away
         if (ThemeColors.Children.LastOrDefault() is DropDownButton b) b.Flyout.ShowAt(b);
@@ -412,14 +464,15 @@ public sealed partial class CardsPage : Page
 
     void InheritTheme_Click(object sender, RoutedEventArgs e)
     {
-        _inheritTheme = true;
-        SetThemes([CharacterColor(ClassBox.SelectedValue as string)]);
+        var pool = CharacterColors(ClassBox.SelectedValue as string);
+        SetThemes([pool[Rng.Next(pool.Count)]]);
     }
 
     void InheritRef_Click(object sender, RoutedEventArgs e)
     {
         _inheritRef = true;
-        RefBox.Text = CharacterRef(ClassBox.SelectedValue as string);
+        _refAssets = new JsonArray();
+        SetRefs([CharacterRef(ClassBox.SelectedValue as string)]);
     }
 
     async void NewCard_Click(object sender, RoutedEventArgs e)
@@ -464,22 +517,39 @@ public sealed partial class CardsPage : Page
 
     // ---- prompt & generation -----------------------------------------------------------------
 
-    async void GenPrompt_Click(object sender, RoutedEventArgs e)
+    async void GenPrompt_Click(object sender, RoutedEventArgs e) => await GeneratePrompt("");
+
+    async void RevisePrompt_Click(object sender, RoutedEventArgs e)
+    {
+        var feedback = PromptFeedbackBox.Text.Trim();
+        if (feedback.Length > 0) await GeneratePrompt(feedback);
+    }
+
+    void PromptFeedback_TextChanged(object sender, TextChangedEventArgs e) =>
+        RevisePromptBtn.IsEnabled = PromptBtn.IsEnabled && !string.IsNullOrWhiteSpace(PromptFeedbackBox.Text);
+
+    async Task GeneratePrompt(string feedback)
     {
         if (_current == null) return;
         await SaveCurrent(quiet: true);
         PromptBtn.IsEnabled = false;
+        RevisePromptBtn.IsEnabled = false;
         PromptRing.IsActive = true;
-        PromptNotes.Text = L.Z("正在构思画面…", "Thinking about the picture…");
+        PromptNotes.Text = feedback.Length > 0
+            ? L.Z("正在按评论重写…", "Rewriting with your feedback…")
+            : L.Z("正在构思画面…", "Thinking about the picture…");
         var card = _current;
         try
         {
-            var res = await Api.Post<PromptResult>($"/api/cards/{card.Id}/prompt");
+            var res = await Api.Post<PromptResult>($"/api/cards/{card.Id}/prompt",
+                                                   feedback.Length > 0 ? new { feedback } : null);
             card.Prompt = res.Prompt;
+            if (res.PromptHistory.Count > 0) card.Params["prompt_history"] = res.PromptHistory.DeepClone();
             if (_current == card)
             {
                 PromptBox.Text = res.Prompt;
                 PromptNotes.Text = res.Notes;
+                if (feedback.Length > 0) PromptFeedbackBox.Text = "";
             }
         }
         catch (Exception ex)
@@ -490,6 +560,7 @@ public sealed partial class CardsPage : Page
         finally
         {
             PromptBtn.IsEnabled = true;
+            RevisePromptBtn.IsEnabled = !string.IsNullOrWhiteSpace(PromptFeedbackBox.Text);
             PromptRing.IsActive = false;
         }
     }
@@ -550,10 +621,12 @@ public sealed partial class CardsPage : Page
 
     async Task Poll()
     {
-        if (_current == null) return;
+        var card = _current;
+        if (card == null) return;
         JobList jobs;
         try { jobs = await Api.Get<JobList>("/api/jobs?active=1"); }
         catch { return; }
+        if (card != _current) return;
 
         var active = jobs.Jobs.Select(j => j.Id).ToHashSet();
         bool finished = _activeJobs.Except(active).Any();
@@ -562,18 +635,20 @@ public sealed partial class CardsPage : Page
         {
             await RefreshCards();
             await LoadImages();
+            if (card != _current) return;
         }
 
-        var mine = jobs.Jobs.Where(j => j.CardId == _current.Id).ToList();
+        var mine = jobs.Jobs.Where(j => j.CardId == card.Id).ToList();
+        var runningCount = mine.Count(j => j.Status == "running");
         var running = mine.FirstOrDefault(j => j.Status == "running");
         _runningJob = running?.Id;
-        AbortBtn.Visibility = running != null ? Visibility.Visible : Visibility.Collapsed;
+        AbortBtn.Visibility = runningCount > 0 ? Visibility.Visible : Visibility.Collapsed;
         UpdateAbortOverlay();
         CardProgress.Visibility = mine.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        CardProgress.IsIndeterminate = running == null || running.Loading;
-        if (running != null) CardProgress.Value = running.Percent;
+        CardProgress.IsIndeterminate = runningCount > 1 || (running != null && running.Loading);
+        if (running != null && runningCount == 1) CardProgress.Value = running.Percent;
         CardJobText.Text = mine.Count == 0 ? "" :
-            running != null ? $"{running.Message}" + (mine.Count > 1 ? L.Z($"  ·  还有 {mine.Count - 1} 张排队", $"  ·  {mine.Count - 1} more queued") : "")
+            runningCount > 0 ? L.Z($"进行中 {runningCount} 张", $"{runningCount} running") + (mine.Count > runningCount ? L.Z($"  ·  排队 {mine.Count - runningCount} 张", $"  ·  {mine.Count - runningCount} queued") : "")
                             : L.Z($"排队中：{mine.Count} 张", $"{mine.Count} queued") + (jobs.Worker.CooldownLeft > 0 ? L.Z($"  ·  GPU 冷却 {jobs.Worker.CooldownLeft}s", $"  ·  GPU cooldown {jobs.Worker.CooldownLeft}s") : "");
 
         if (running != null)
@@ -593,7 +668,16 @@ public sealed partial class CardsPage : Page
             }
         }
         LivePreview.Visibility = Visibility.Collapsed;
-        ArtHint.Visibility = ArtImage.Source == null ? Visibility.Visible : Visibility.Collapsed;
+        ArtHint.Visibility = string.IsNullOrWhiteSpace(ArtImage.Path) ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    async Task PollSafely()
+    {
+        if (_polling) return;
+        _polling = true;
+        try { await Poll(); }
+        catch (Exception error) { System.Diagnostics.Debug.WriteLine($"Card polling failed: {error}"); }
+        finally { _polling = false; }
     }
 
     // ---- images ------------------------------------------------------------------------------
@@ -615,7 +699,7 @@ public sealed partial class CardsPage : Page
     {
         var sel = _current?.SelectedImage;
         var img = _images.FirstOrDefault(i => i.Id == sel);
-        ArtImage.Source = img?.Full;
+        ArtImage.Path = img?.Path ?? "";
         ArtHint.Visibility = img == null ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -624,7 +708,7 @@ public sealed partial class CardsPage : Page
         if (e.ClickedItem is not ImageRec img) return;
         if (img.IsDraft)
         {
-            ArtImage.Source = img.Full;
+            ArtImage.Path = img.Path;
             ArtHint.Visibility = Visibility.Collapsed;
             CardJobText.Text = L.Z("草图预览：右键选“精绘”接着画完", "Draft preview: right-click and choose Paint final to finish it");
             return;
@@ -640,6 +724,7 @@ public sealed partial class CardsPage : Page
             await Api.Post($"/api/images/{img.Id}/select", new { card_id = _current.Id });
             _current.SelectedImage = img.Id;
             _current.SelectedCreated = img.Created;
+            _current.SelectedPath = img.Path;
             ShowArt();
         }
         catch (Exception ex) { App.Main.ShowError(ex.Message); }
@@ -711,7 +796,23 @@ public sealed partial class CardsPage : Page
         VariantsBox.Value = 1;
         ParamsExpander.IsExpanded = true;
     }
-    void ImgRef_Click(object sender, RoutedEventArgs e) { if (_menuImage != null) { RefBox.Text = _menuImage.Path; _inheritRef = false; ParamsExpander.IsExpanded = true; } }
+    void ImgRef_Click(object sender, RoutedEventArgs e)
+    {
+        if (_menuImage == null) return;
+        if (!_refs.Contains(_menuImage.Path, StringComparer.OrdinalIgnoreCase))
+        {
+            while (_refAssets.Count < _refs.Count) _refAssets.Add(new JsonObject { ["role"] = "reference" });
+            _refAssets.Add(new JsonObject
+            {
+                ["path"] = _menuImage.Path,
+                ["name"] = Path.GetFileNameWithoutExtension(_menuImage.Path),
+                ["role"] = "reference",
+            });
+            SetRefs(_refs.Append(_menuImage.Path));
+        }
+        _inheritRef = false;
+        ParamsExpander.IsExpanded = true;
+    }
     void ImgInit_Click(object sender, RoutedEventArgs e) { if (_menuImage != null) { InitBox.Text = _menuImage.Path; ParamsExpander.IsExpanded = true; } }
 
     async void ImgFav_Click(object sender, RoutedEventArgs e)
@@ -744,11 +845,13 @@ public sealed partial class CardsPage : Page
     async void ImgDelete_Click(object sender, RoutedEventArgs e)
     {
         if (_menuImage == null) return;
+        var id = _menuImage.Id;
         try
         {
-            await Api.Delete($"/api/images/{_menuImage.Id}");
-            _images.Remove(_menuImage);
-            if (_current?.SelectedImage == _menuImage.Id) _current.SelectedImage = null;
+            await Api.Delete($"/api/images/{id}");
+            var current = _images.FirstOrDefault(i => i.Id == id);
+            if (current != null) _images.Remove(current);
+            if (_current?.SelectedImage == id) _current.SelectedImage = null;
             ShowArt();
             await RefreshCards();
         }
@@ -757,15 +860,95 @@ public sealed partial class CardsPage : Page
 
     async void PickRef_Click(object sender, RoutedEventArgs e)
     {
-        var f = await App.Main.PickFile(".png", ".jpg", ".jpeg", ".webp");
-        if (f == null) return;
-        RefBox.Text = f;
+        var files = await App.Main.PickFiles(".png", ".jpg", ".jpeg", ".webp");
+        if (files.Count == 0) return;
+        if (_inheritRef && _refs.Count > 0)
+        {
+            _refAssets = new JsonArray(new JsonObject
+            {
+                ["path"] = _refs[0], ["name"] = Meta.Info.Classes.FirstOrDefault(c => c.Id == _current?.Cls)?.Name ?? "",
+                ["role"] = "character",
+            });
+        }
+        while (_refAssets.Count < _refs.Count) _refAssets.Add(new JsonObject { ["role"] = "reference" });
+        foreach (var file in files.Where(file => !_refs.Contains(file, StringComparer.OrdinalIgnoreCase)))
+            _refAssets.Add(new JsonObject { ["path"] = file, ["name"] = Path.GetFileNameWithoutExtension(file), ["role"] = "reference" });
+        SetRefs(_refs.Concat(files));
         _inheritRef = false;
+    }
+
+    void ApplyTemplateFilter()
+    {
+        var query = TemplateSearchBox.Text.Trim();
+        var matches = _templateAssets.Where(asset => query.Length == 0 ||
+            asset.Name.Contains(query, StringComparison.OrdinalIgnoreCase));
+        var visible = matches.Take(240)
+            .Concat(matches.Where(asset => _templateSelection.Contains(asset.Path)))
+            .DistinctBy(asset => asset.Path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        _updatingTemplateSelection = true;
+        TemplateGrid.ItemsSource = visible;
+        TemplateGrid.SelectedItems.Clear();
+        foreach (var asset in visible.Where(asset => _templateSelection.Contains(asset.Path)))
+            TemplateGrid.SelectedItems.Add(asset);
+        _updatingTemplateSelection = false;
+    }
+
+    void TemplateSearchBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyTemplateFilter();
+
+    void TemplateGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingTemplateSelection) return;
+        foreach (var asset in e.RemovedItems.OfType<ReferenceAsset>()) _templateSelection.Remove(asset.Path);
+        foreach (var asset in e.AddedItems.OfType<ReferenceAsset>()) _templateSelection.Add(asset.Path);
+    }
+
+    async void PickTemplate_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var assets = await Api.Get<List<ReferenceAsset>>("/api/reference-assets");
+            if (assets.Count == 0)
+            {
+                App.Main.ShowError(L.Z("模板库为空，请先在“本地模板”页面导入素材。",
+                                        "The template library is empty. Import assets on the Templates page first."));
+                return;
+            }
+            _templateAssets.Clear();
+            _templateAssets.AddRange(assets);
+            _templateSelection.Clear();
+            foreach (var path in _refs) _templateSelection.Add(path);
+            TemplateSearchBox.Text = "";
+            ApplyTemplateFilter();
+            if (await TemplateDialog.ShowAsync() == ContentDialogResult.Primary)
+            {
+                var selected = _templateAssets.Where(asset => _templateSelection.Contains(asset.Path)).ToList();
+                var templatePaths = _templateAssets.Select(asset => asset.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var retained = _refs.Select((path, index) => (path, index))
+                    .Where(item => !templatePaths.Contains(item.path)).ToList();
+                var metadata = new List<JsonNode>();
+                foreach (var item in retained)
+                    metadata.Add(item.index < _refAssets.Count
+                        ? _refAssets[item.index]?.DeepClone() ?? new JsonObject { ["role"] = "reference" }
+                        : new JsonObject { ["path"] = item.path, ["role"] = "reference" });
+                metadata.AddRange(selected.Select(a => (JsonNode)new JsonObject
+                {
+                    ["path"] = a.Path, ["name"] = a.Name, ["role"] = a.Role,
+                    ["prompt_hint"] = a.PromptHint,
+                }));
+                SetRefs(retained.Select(item => item.path).Concat(selected.Select(a => a.Path)));
+                _refAssets = new JsonArray(metadata.ToArray());
+                _inheritRef = false;
+                ParamsExpander.IsExpanded = true;
+            }
+        }
+        catch (Exception ex) { App.Main.ShowError(ex.Message); }
     }
 
     void ClearRef_Click(object sender, RoutedEventArgs e)
     {
-        RefBox.Text = "";
+        SetRefs([]);
+        _refAssets = new JsonArray();
         _inheritRef = false;
     }
 
@@ -840,6 +1023,7 @@ public sealed partial class CardsPage : Page
             {
                 var res = await Api.Post<PromptResult>($"/api/cards/{c.Id}/prompt");
                 c.Prompt = res.Prompt;
+                if (res.PromptHistory.Count > 0) c.Params["prompt_history"] = res.PromptHistory.DeepClone();
                 if (c == _current) PromptBox.Text = res.Prompt;
                 done++;
             }

@@ -23,6 +23,7 @@ from PIL import Image  # noqa: E402
 import config  # noqa: E402
 import examples  # noqa: E402
 import exporter  # noqa: E402
+import native_assets  # noqa: E402
 import promptgen  # noqa: E402
 import store  # noqa: E402
 import sts2  # noqa: E402
@@ -82,7 +83,24 @@ def card_or_404(cid):
     card = store.get_card(int(cid))
     if not card:
         raise ApiError(config.tr("卡牌不存在", "Card not found"), 404)
+    return _freeze_card_theme(card)
+
+
+def _freeze_card_theme(card):
+    """Choose one character-pool colour once, persist it on the card, and never reroll during generation."""
+    params = dict(card.get("params") or {})
+    if not sts2.explicit_card_themes(card):
+        params["theme_colors"] = sts2.choose_card_themes(card)
+        card = store.update_card(card["id"], {"params": params}) if card.get("id") else {**card, "params": params}
     return card
+
+
+def _new_card(data):
+    draft = dict(data)
+    draft["params"] = dict(draft.get("params") or {})
+    if not sts2.explicit_card_themes(draft):
+        draft["params"]["theme_colors"] = sts2.choose_card_themes(draft)
+    return store.create_card(draft)
 
 
 def image_or_404(iid):
@@ -90,6 +108,13 @@ def image_or_404(iid):
     if not img:
         raise ApiError(config.tr("图片不存在", "Image not found"), 404)
     return img
+
+
+def reference_or_404(aid):
+    asset = store.get_reference_asset(int(aid))
+    if not asset:
+        raise ApiError(config.tr("模板不存在", "Template not found"), 404)
+    return asset
 
 
 # ---- status / settings / meta ----------------------------------------------------------------
@@ -101,8 +126,10 @@ async def health(_):
 
 @routes.get("/api/status")
 async def status(_):
-    gen = config.load()["gen"]
+    settings = config.load()
+    gen = settings["gen"]
     return ok({"version": VERSION, "comfy": comfy.status(), "worker": worker.status(), "gpu": thermal.gpu(),
+               "image_provider": settings.get("image_provider") or "comfy",
                "thermal": {"trigger": gen.get("cool_trigger") or 0, "resume": gen.get("cool_temp")}})
 
 
@@ -121,7 +148,14 @@ async def get_settings(_):
 
 @routes.put("/api/settings")
 async def put_settings(request):
+    before = config.load()
     s = config.save(await body(request))
+    was_local = before.get("image_provider", "comfy") == "comfy"
+    is_local = s.get("image_provider", "comfy") == "comfy"
+    if was_local and not is_local and worker.current is None:
+        await comfy.stop()  # release VRAM immediately when switching to a cloud renderer
+    elif is_local and not was_local and s.get("comfy_autostart"):
+        asyncio.get_running_loop().create_task(comfy.start())
     worker.wake()
     return ok(s)
 
@@ -130,11 +164,13 @@ async def put_settings(request):
 async def meta(_):
     return ok({
         "classes": [{"id": c["id"], "name": c["name"] or c["id"], "color": c["color"],
+                     "colors": sts2.valid_colors(c.get("colors")) or sts2.default_color_pool(c["color"]),
                      "ref": c["ref_image"], "use_ref": bool(c["use_ref"])} for c in store.list_characters()],
         "default_style_suffix": sts2.DEFAULT_STYLE_SUFFIX,
         "default_prompt_system": sts2.DEFAULT_PROMPT_SYSTEM,
         "default_prompt_template": sts2.DEFAULT_PROMPT_TEMPLATE,
         "types": [{"id": k, "name": v[0]} for k, v in sts2.CARD_TYPES.items()],
+        "scene_modes": [{"id": k, "name": v[0]} for k, v in sts2.SCENE_MODES.items()],
         "rarities": [{"id": k, "name": v[0], "color": v[1]} for k, v in sts2.RARITIES.items()],
         "sizes": [{"id": k, "name": v["label"], "gen": v["gen"], "out": v["out"]} for k, v in sts2.SIZE_PRESETS.items()],
         "loras": comfy.lora_list(),
@@ -157,7 +193,10 @@ async def shutdown(_):
 
 @routes.get("/api/characters")
 async def list_characters(_):
-    return ok(store.list_characters())
+    chars = store.list_characters()
+    for char in chars:
+        char["colors"] = sts2.valid_colors(char.get("colors")) or sts2.default_color_pool(char["color"])
+    return ok(chars)
 
 
 @routes.put("/api/characters/{id}")
@@ -165,12 +204,155 @@ async def save_character(request):
     cid = exporter.slugify(request.match_info["id"], "")
     if not cid or cid in sts2.CLASSES:
         raise ApiError(config.tr("角色 id 需为英文字母/数字，且不能与原版职业重名", "Character id must be letters/digits and differ from the built-in classes"))
-    return ok(store.save_character(cid, await body(request)))
+    char = store.save_character(cid, await body(request))
+    char["colors"] = sts2.valid_colors(char.get("colors")) or sts2.default_color_pool(char["color"])
+    return ok(char)
 
 
 @routes.delete("/api/characters/{id}")
 async def delete_character(request):
     store.delete_character(request.match_info["id"])
+    return ok()
+
+
+# ---- native reference/template library ------------------------------------------------------
+
+@routes.get("/api/reference-assets")
+async def list_reference_assets(request):
+    missing = store.prune_missing_reference_assets()
+    for asset in missing:
+        for p in THUMBS.glob(f"ref_{asset['id']}_*.png"):
+            try:
+                p.unlink()
+            except OSError:
+                pass
+    assets = store.list_reference_assets(request.query.get("category") or None)
+    if request.query.get("include_internal", "0").casefold() not in {"1", "true", "yes"}:
+        assets = [asset for asset in assets if not native_assets.is_internal_asset(asset)]
+    query = str(request.query.get("q") or "").strip().casefold()
+    if query:
+        assets = [asset for asset in assets if query in str(asset.get("name") or "").casefold()]
+    # Databases created by earlier builds may already contain several hashed-path copies with the same display name.
+    # Keep them on disk (no destructive migration), but expose only the newest record in normal library/picker views.
+    unique, seen = [], set()
+    for asset in assets:
+        key = str(asset.get("name") or "").strip().casefold()
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        unique.append(asset)
+    return ok(unique)
+
+
+@routes.post("/api/reference-assets/scan")
+async def scan_reference_assets(request):
+    data = await body(request)
+    return ok(await asyncio.to_thread(native_assets.scan, data.get("root") or "", data.get("language") or config.ui_lang()))
+
+
+@routes.get("/api/reference-assets/discover-game")
+async def discover_native_game(_):
+    return ok(await asyncio.to_thread(native_assets.discover_games))
+
+
+@routes.post("/api/reference-assets/extract-pck")
+async def extract_native_pck(request):
+    return ok(await asyncio.to_thread(native_assets.extract_pck, await body(request)))
+
+
+@routes.post("/api/reference-assets/import")
+async def import_reference_assets(request):
+    data = await body(request)
+    items = data.get("items")
+    if items is None:
+        paths = data.get("paths") or ([data["path"]] if data.get("path") else [])
+        items = [{"path": path, "name": data.get("name") or ""} for path in paths]
+    if not isinstance(items, list) or not items:
+        raise ApiError(config.tr("请选择至少一张图片", "Choose at least one image"))
+    if len(items) > 1000:
+        raise ApiError(config.tr("一次最多导入 1000 张图片", "At most 1000 images can be imported at once"))
+    imported = []
+    for item in items:
+        if not isinstance(item, dict) or not item.get("path"):
+            continue
+        imported.append(await asyncio.to_thread(native_assets.import_image, item["path"], item.get("name") or "",
+            data.get("category") or "other", data.get("role") or "style", "image", None,
+            data.get("language") or config.ui_lang()))
+    return ok(imported)
+
+
+@routes.post("/api/reference-assets/import-batch")
+async def import_reference_asset_batch(request):
+    """Best-effort bulk import: one unreadable recovered file must not abort thousands of usable templates."""
+    data = await body(request)
+    items = data.get("items") or []
+    if not isinstance(items, list) or not items:
+        raise ApiError(config.tr("请选择至少一张图片", "Choose at least one image"))
+    if len(items) > 250:
+        raise ApiError(config.tr("单批最多导入 250 张图片", "At most 250 images can be imported per batch"))
+    return ok(await asyncio.to_thread(native_assets.import_many, items, data.get("category") or "other",
+                                      data.get("role") or "style", data.get("language") or config.ui_lang()))
+
+
+@routes.get("/api/reference-assets/renderer-info")
+async def reference_renderer_info(_):
+    return ok(native_assets.renderer_info())
+
+
+@routes.post("/api/reference-assets/render-spine")
+async def render_reference_spine(request):
+    return ok(await asyncio.to_thread(native_assets.render_spine, await body(request)))
+
+
+@routes.get(r"/api/reference-assets/{id:\d+}/file")
+async def reference_asset_file(request):
+    return web.FileResponse(reference_or_404(request.match_info["id"])["path"],
+                            headers={"Cache-Control": "private, max-age=86400"})
+
+
+@routes.get(r"/api/reference-assets/{id:\d+}/thumb")
+async def reference_asset_thumb(request):
+    asset = reference_or_404(request.match_info["id"])
+    w = max(64, min(1024, int(request.query.get("w", 320))))
+    path = THUMBS / f"ref_{asset['id']}_{w}.png"
+    if not path.exists():
+        with Image.open(asset["path"]) as im:
+            im.thumbnail((w, w), Image.Resampling.LANCZOS)
+            im.save(path, format="PNG", optimize=True)
+    return web.FileResponse(path, headers={"Cache-Control": "private, max-age=86400"})
+
+
+@routes.put(r"/api/reference-assets/{id:\d+}")
+async def update_reference_asset(request):
+    asset = reference_or_404(request.match_info["id"])
+    data = await body(request)
+    role = data.get("role")
+    if role is not None and role not in native_assets.ROLE_VALUES:
+        raise ApiError(config.tr("未知的模板角色", "Unknown template role"))
+    for key in ("name", "category", "role"):
+        if key in data:
+            asset[key] = str(data[key]).strip()
+    if "prompt_hint" in data:
+        metadata = dict(asset.get("metadata") or {})
+        hint = str(data.get("prompt_hint") or "").strip()[:4000]
+        if hint:
+            metadata["prompt_hint"] = hint
+        else:
+            metadata.pop("prompt_hint", None)
+        asset["metadata"] = metadata
+    return ok(store.save_reference_asset(asset))
+
+
+@routes.delete(r"/api/reference-assets/{id:\d+}")
+async def delete_reference_asset(request):
+    asset = reference_or_404(request.match_info["id"])
+    native_assets.delete_asset(asset["id"])
+    for p in THUMBS.glob(f"ref_{asset['id']}_*.png"):
+        try:
+            p.unlink()
+        except OSError:
+            pass
     return ok()
 
 
@@ -197,20 +379,20 @@ async def comfy_log(request):
 
 @routes.get("/api/cards")
 async def list_cards(request):
-    return ok(store.list_cards(request.query.get("project") or None))
+    return ok([_freeze_card_theme(card) for card in store.list_cards(request.query.get("project") or None)])
 
 
 @routes.post("/api/cards")
 async def create_card(request):
     data = await body(request)
-    return ok(store.create_card(data))
+    return ok(_new_card(data))
 
 
 @routes.post("/api/cards/bulk")
 async def create_cards(request):
     data = await body(request)
     project = data.get("project") or "default"
-    return ok([store.create_card({"project": project, **c}) for c in data.get("cards", [])])
+    return ok([_new_card({"project": project, **c}) for c in data.get("cards", [])])
 
 
 @routes.get(r"/api/cards/{id:\d+}")
@@ -235,9 +417,63 @@ async def delete_card(request):
 async def card_prompt(request):
     """Generate an image prompt for a card with the configured LLM and save it on the card."""
     card = card_or_404(request.match_info["id"])
-    card.update({k: v for k, v in (await body(request)).items() if k in store.CARD_FIELDS})
-    res = await promptgen.art_prompt(card, config.load())
-    store.update_card(card["id"], {"prompt": res["prompt"]})
+    data = await body(request)
+    feedback = str(data.get("feedback") or "").strip()[:4000]
+    card.update({k: v for k, v in data.items() if k in store.CARD_FIELDS})
+
+    # Keep prompt-only revisions even when the user never rendered them, and also expose prompts attached to this
+    # card's rendered images.  A compact, de-duplicated tail avoids unbounded context growth.
+    params = dict(card.get("params") or {})
+    saved_history = []
+    raw_history = params.get("prompt_history") or []
+    if not isinstance(raw_history, list):
+        raw_history = []
+    for item in raw_history:
+        if isinstance(item, str):
+            item = {"prompt": item}
+        if isinstance(item, dict) and str(item.get("prompt") or "").strip():
+            saved_history.append({k: str(item[k]) for k in ("prompt", "feedback") if item.get(k)})
+    context, seen = [], set()
+
+    def add_context(item):
+        prompt = str(item.get("prompt") or "").strip()
+        key = " ".join(prompt.split()).casefold()
+        if not prompt or key == " ".join(str(card.get("prompt") or "").split()).casefold():
+            return
+        if key in seen:
+            # A persisted revision may duplicate a rendered-image prompt but carries more useful user criticism.
+            if item.get("feedback"):
+                for i, old in enumerate(context):
+                    old_key = " ".join(str(old.get("prompt") or "").split()).casefold()
+                    if old_key == key:
+                        context.pop(i)
+                        context.append(item)
+                        break
+            return
+        seen.add(key)
+        context.append(item)
+
+    for image in reversed(store.list_images(card["id"], limit=20)):
+        add_context({"prompt": str(image.get("prompt") or "")})
+    # Put explicit prompt revisions after rendered-image history so their associated user comments survive the cap.
+    for item in saved_history:
+        add_context(item)
+
+    old_prompt = str(card.get("prompt") or "").strip()
+    res = await promptgen.art_prompt(card, config.load(), context[-8:], feedback)
+    if old_prompt:
+        entry = {"prompt": old_prompt}
+        if feedback:
+            entry["feedback"] = feedback
+        if not saved_history or saved_history[-1] != entry:
+            saved_history.append(entry)
+    saved_history = saved_history[-12:]
+    if saved_history:
+        params["prompt_history"] = saved_history
+    else:
+        params.pop("prompt_history", None)
+    store.update_card(card["id"], {"prompt": res["prompt"], "params": params})
+    res["prompt_history"] = saved_history
     return ok(res)
 
 
@@ -276,7 +512,7 @@ async def import_csv(request):
             continue
         card = {k: r[k] for k in CSV_FIELDS if r.get(k)}
         card.setdefault("project", data.get("project") or "default")
-        created.append(store.create_card(card))
+        created.append(_new_card(card))
     return ok(created)
 
 
@@ -308,6 +544,7 @@ async def create_project_jobs(request):
     data = await body(request)
     settings, ids, skipped = config.load(), [], []
     for card in store.list_cards(data.get("project") or None):
+        card = _freeze_card_theme(card)
         if data.get("only_missing") and card["image_count"]:
             continue
         if not card["prompt"]:
@@ -453,7 +690,8 @@ def _redo_request(img, card, data):
         or config.load()["gen"]["size_preset"]
     return {"prompt": p.get("prompt") or img["prompt"], "negative": p.get("negative"),
             "seed": img["seed"], "count": 1, "size_preset": preset if preset in sts2.SIZE_PRESETS else "sts2_card",
-            "lora": p.get("lora"), "lora_strength": p.get("lora_strength"), "refs": p.get("refs") or []}
+            "lora": p.get("lora"), "lora_strength": p.get("lora_strength"), "refs": p.get("refs") or [],
+            "theme_colors": p.get("theme_colors") or []}
 
 
 @routes.post(r"/api/images/{id:\d+}/export")
@@ -480,12 +718,17 @@ async def on_startup(app):
     loop = asyncio.get_running_loop()
     app["worker"] = loop.create_task(worker.loop())
     app["thermal"] = loop.create_task(thermal.loop())
-    if config.load().get("comfy_autostart"):
-        loop.create_task(comfy.start())
+    settings = config.load()
+    # Only start ComfyUI if using local mode AND autostart is enabled AND ComfyUI exists
+    if settings.get("image_provider", "comfy") == "comfy" and settings.get("comfy_autostart"):
+        comfy_dir = config.comfy_dir(settings)
+        if comfy_dir and (comfy_dir / "main.py").exists():
+            loop.create_task(comfy.start())
 
 
 async def on_cleanup(app):
     app["worker"].cancel()
+    await worker.shutdown()
     await comfy.stop()
 
 

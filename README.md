@@ -53,7 +53,7 @@ proxy" is off (Clash / mihomo 7890, Clash Verge 7897, v2rayN 10809, …; a port 
 pip and the AI prompt writer go through it; local addresses stay direct. **Off** or a manual address are also possible.
 
 ## Workflow
-1. **Characters**: create your mod character first: name, id (the prompt's trigger word, `sts2 card art, <id> card.`), frame
+1. **Characters**: create your mod character first: name, id (the prompt's identity token, `sts2 illustration, <id>.`), frame
    colour, palette, appearance and a reference image. Every card belongs to a
    mod character; its appearance is written into every card prompt and its reference image is attached to every card
    by default for consistency (a card can use another image or none).
@@ -85,6 +85,19 @@ pip and the AI prompt writer go through it; local addresses stay direct. **Off**
 - Objects, weapons, hands, effects and hooded/backlit figures work best. Generate several and pick.
 - Name every part of complex objects (a bicycle: two round wheels, handlebars, pedals, chain) or parts go missing.
 - Recurring mod character: describe it concretely on the Characters page (hair, outfit, props); turn on its reference image when you need stronger consistency.
+- **Local native templates:** one-click GDRE recovery automatically scans image and Spine bundles; **Rescan** indexes
+  files added to the extracted folder later. Selected previews are copied into
+  CardForge's local library, and lets a card bind multiple references as character/enemy/ally/object/scene/style.
+  It detects STS2 through the running process or Steam installations across all mounted drive letters (including
+  libraries declared in `libraryfolders.vdf`), and can download the
+  latest stable official GDRE Tools Windows release and recover the user's PCK with one click. Extractions are cached by
+  PCK path, size and modification time, so an unchanged game is not unpacked twice.
+  They behave like ordinary references: local generation keeps them local, while cloud image APIs receive selected
+  references as part of the generation request. Recovered translation CSVs supply localized one-click-import names;
+  manual imports retain their original names. An exact template-name mention in a prompt automatically attaches that
+  reference. Spine 4.2 first-frame rendering uses the included official `spine-canvaskit` runtime and Node.js 20 or
+  newer; no Spine Editor installation path is needed. Users of the runtime feature must still satisfy its license.
+  The runtime version is locked to 4.2.106 to match STS2's 4.2 exports.
 
 ---
 

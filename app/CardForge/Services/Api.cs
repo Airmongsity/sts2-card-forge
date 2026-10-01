@@ -64,6 +64,13 @@ public static class Api
         return new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(url));
     }
 
+    public static Microsoft.UI.Xaml.Media.Imaging.BitmapImage ReferenceImage(int id, double? created, int width = 320)
+    {
+        var v = ((long)((created ?? 0) * 1000)).ToString();
+        return new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(
+            new Uri($"{Base}/api/reference-assets/{id}/thumb?w={width}&v={v}"));
+    }
+
     public static async Task<string> GetText(string path) => await Http.GetStringAsync(Base + path);
 
     public static async Task<byte[]?> GetBytes(string path)
@@ -96,7 +103,7 @@ public static class Meta
     public static async Task Load()
     {
         Info = await Api.Get<MetaInfo>("/api/meta");
-        foreach (var o in Info.Classes.Concat(Info.Types).Concat(Info.Rarities)) o.Name = L.Pick(o.Name);
+        foreach (var o in Info.Classes.Concat(Info.Types).Concat(Info.SceneModes).Concat(Info.Rarities)) o.Name = L.Pick(o.Name);
         Brushes.Clear();
     }
 

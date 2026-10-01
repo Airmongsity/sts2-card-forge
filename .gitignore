@@ -16,5 +16,6 @@ bin/
 obj/
 .vs/
 __pycache__/
+node_modules/
 *.pyc
 *.user

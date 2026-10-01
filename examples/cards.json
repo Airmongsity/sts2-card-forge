@@ -5,6 +5,7 @@
    "name": "示例·刺客 Example Rogue",
    "base_class": "silent",
    "color": "#3f8a3a",
+   "colors": ["#283f36", "#3f8a3a", "#879b3d", "#d0bd45"],
    "palette": "poison green, yellow and olive",
    "appearance": "a hooded figure in a green cloak with brown leather gloves, face hidden in shadow"
   },
@@ -13,6 +14,7 @@
    "name": "示例·战士 Example Warrior",
    "base_class": "ironclad",
    "color": "#b3322b",
+   "colors": ["#49233f", "#8f2924", "#d86823", "#e9c85a"],
    "palette": "fiery orange, deep purple and maroon",
    "appearance": "a heavily armored brute wielding a spiked iron mace"
   },
@@ -21,6 +23,7 @@
    "name": "示例·工匠 Example Tinker",
    "base_class": "colorless",
    "color": "#c07a3a",
+   "colors": ["#4d3328", "#85502f", "#c07a3a", "#dda24c"],
    "palette": "rusty orange and brown",
    "appearance": "a wandering tinker who fixes old machines"
   }

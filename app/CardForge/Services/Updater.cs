@@ -29,10 +29,12 @@ public static class Updater
         var (proxy, _) = await NetProxy.Resolve();
         if (_http == null || _httpProxy != proxy)
         {
+            var old = _http;
             // no auto-redirect: the fallback reads the tag from the /releases/latest redirect
             _http = new HttpClient(await NetProxy.Handler(allowRedirect: false)) { Timeout = TimeSpan.FromSeconds(20) };
             _http.DefaultRequestHeaders.UserAgent.ParseAdd("STS2CardForge/" + Current);
             _httpProxy = proxy;
+            old?.Dispose();
         }
         return _http;
     }

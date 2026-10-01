@@ -11,9 +11,27 @@ public partial class App : Application
         InitializeComponent();
         UnhandledException += (_, e) =>
         {
+            LogUnhandled("XAML", e.Exception);
             e.Handled = true;
-            Main?.ShowError(e.Exception.Message);
         };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            LogUnhandled("AppDomain", e.ExceptionObject as Exception ?? new Exception(e.ExceptionObject?.ToString()));
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            LogUnhandled("Task", e.Exception);
+            e.SetObserved();
+        };
+    }
+
+    static void LogUnhandled(string source, Exception error)
+    {
+        try
+        {
+            Directory.CreateDirectory(Services.AppPaths.Logs);
+            File.AppendAllText(Path.Combine(Services.AppPaths.Logs, "app.log"),
+                $"{DateTime.Now:O} [{source}] {error}\n\n");
+        }
+        catch { }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)

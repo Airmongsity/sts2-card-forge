@@ -16,7 +16,7 @@
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
-            <TextBlock Text="{x:Bind s:L.Z('MOD 角色','Mod characters')}" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <TextBlock Text="{x:Bind s:L.Z('角色','Characters')}" Style="{StaticResource SubtitleTextBlockStyle}" />
             <ListView x:Name="CharList" Grid.Row="1" SelectionMode="Single" SelectionChanged="CharList_SelectionChanged">
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="s:ModCharacter">
@@ -43,7 +43,7 @@
 
         <TextBlock x:Name="EmptyHint" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
                    Style="{StaticResource Hint}" MaxWidth="520"
-                   Text="{x:Bind s:L.Z('为你的 MOD 角色建档：外观描述会注入该角色每张卡的提示词，角色也会出现在卡牌的“职业”列表里，导出时可作为子文件夹名。','Create a profile for your mod character: its appearance is added to the prompt of every card it owns, it shows up in the card Class list, and its id names the export subfolder.')}" />
+                   Text="{x:Bind s:L.Z('为角色建档：外观描述会注入该角色每张卡的提示词，角色也会出现在卡牌的“职业”列表里，导出时可作为子文件夹名。','Create a character profile: its appearance is added to the prompt of every card it owns, it shows up in the card Class list, and its id names the export subfolder.')}" />
 
         <ScrollViewer x:Name="Editor" Grid.Column="1" Visibility="Collapsed">
             <StackPanel Padding="24,16" Spacing="12" MaxWidth="860" HorizontalAlignment="Left">
@@ -70,6 +70,18 @@
                     </StackPanel>
                     <TextBox x:Name="ColorBox" Grid.Column="1" Header="{x:Bind s:L.Z('卡框颜色','Frame colour')}" TextChanged="ColorBox_TextChanged" />
                 </Grid>
+                <StackPanel Spacing="5">
+                    <TextBlock Text="{x:Bind s:L.Z('角色颜色池','Character colour pool')}" />
+                    <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
+                               Text="{x:Bind s:L.Z('卡牌没有单独指定主题色时，每次点击生成会从这里随机抽取 1 色；同一批候选图使用相同配色。','When a card has no theme override, each generation request samples one colour here; variants in the same request share that colour.')}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <StackPanel x:Name="PoolColors" Orientation="Horizontal" Spacing="10" />
+                        <Button x:Name="AddPoolBtn" Click="AddPool_Click" ToolTipService.ToolTip="{x:Bind s:L.Z('添加颜色','Add a colour')}">
+                            <SymbolIcon Symbol="Add" />
+                        </Button>
+                        <Button Click="UseFrameColor_Click" Content="{x:Bind s:L.Z('加入卡框色','Add frame colour')}" />
+                    </StackPanel>
+                </StackPanel>
                 <TextBox x:Name="PaletteBox" Header="{x:Bind s:L.Z('标志配色（英文，可选）','Signature colours (English, optional)')}"
                          PlaceholderText="violet and teal" />
                 <TextBox x:Name="AppearanceBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="110"
@@ -86,7 +98,7 @@
                 <Image x:Name="RefPreview" MaxHeight="220" HorizontalAlignment="Left" Stretch="Uniform" />
                 <ToggleSwitch x:Name="UseRefSwitch" Header="{x:Bind s:L.Z('该角色的卡牌默认附加此参考图（推荐：保证角色一致；出图约慢 70%）','Attach this reference to the character cards by default (recommended for consistency; ~70% slower)')}" />
                 <TextBlock Style="{StaticResource Hint}"
-                           Text="{x:Bind s:L.Z('提示词以 sts2 card art, 角色id card. 开头：只带上 STS2 画风，不会继承任何原版职业的特征（例如亡灵契约师的骷髅手）。角色长什么样完全由外观描述和参考图决定。','Prompts start with sts2 card art, character-id card. which carries the STS2 style without inheriting any built-in class traits (such as the Necrobinder skeletal hands). The look comes only from the appearance and the reference image.')}" />
+                           Text="{x:Bind s:L.Z('提示词以 sts2 illustration, 角色id. 开头；画风由已加载的 LoRA 提供，不在场景文字中加入实体卡牌。角色长什么样完全由外观描述和参考图决定。','Prompts start with sts2 illustration, character-id. The loaded LoRA supplies the style without adding a physical card to the scene text. Appearance comes only from the description and reference image.')}" />
                 <StackPanel Orientation="Horizontal" Spacing="10">
                     <Button Style="{StaticResource AccentButtonStyle}" Content="{x:Bind s:L.Z('保存角色','Save character')}" Click="Save_Click" />
                     <TextBlock x:Name="SavedText" Style="{StaticResource Hint}" VerticalAlignment="Center" />

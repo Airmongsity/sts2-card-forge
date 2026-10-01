@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json.Nodes;
 using CardForge.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -12,16 +13,46 @@ public sealed partial class SetupPage : Page
     readonly List<SetupStep> _steps = Setup.CreateSteps();
     CancellationTokenSource? _cts;
     bool _loading;
+    bool _serviceLoading;
+    JsonObject _serviceSettings = new();
+    IReadOnlyList<LlmPreset> PromptPresets => SettingsPage.Presets;
+    IReadOnlyList<ImagePreset> ImagePresets => SettingsPage.ImagePresets;
 
     public SetupPage()
     {
         InitializeComponent();
         StepsList.ItemsSource = _steps;
+        PresetBox.ItemsSource = PromptPresets;
+        ImagePresetBox.ItemsSource = ImagePresets;
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         _loading = true;
+        _serviceLoading = true;
+        try
+        {
+            _serviceSettings = await Api.Get<JsonObject>("/api/settings");
+            var provider = Str(_serviceSettings["llm_provider"], "anthropic");
+            var promptPreset = PromptPresets.FirstOrDefault(p => p.Id == Str(_serviceSettings["llm_preset"]) && p.Provider == provider)
+                               ?? PromptPresets.First(p => p.Provider == provider);
+            PresetBox.SelectedItem = promptPreset;
+            ShowPromptPreset(promptPreset, fromSettings: true);
+            EffortBox.SelectedItem = Str(_serviceSettings["anthropic_effort"], "medium");
+            SystemPromptBox.Text = Str(_serviceSettings["prompt_system"]);
+            TemplateBox.Text = Str(_serviceSettings["prompt_template"]);
+
+            var imageProvider = Str(_serviceSettings["image_provider"], "comfy");
+            var savedImagePreset = Str(_serviceSettings["image_preset"]);
+            var imagePreset = ImagePresets.FirstOrDefault(p => p.Id == savedImagePreset && p.Provider == imageProvider)
+                              ?? (savedImagePreset == "openai" && imageProvider == "openai" ? ImagePresets.First(p => p.Id == "custom") : null)
+                              ?? ImagePresets.FirstOrDefault(p => p.Provider == imageProvider) ?? ImagePresets[0];
+            ImagePresetBox.SelectedItem = imagePreset;
+            ShowImagePreset(imagePreset, fromSettings: true);
+            ShowMode();
+        }
+        catch (Exception ex) { App.Main.ShowError(ex.Message); }
+        finally { _serviceLoading = false; }
         GpuText.Text = Gpu.Summary();
 
         PackageBox.Items.Clear();
@@ -107,7 +138,12 @@ public sealed partial class SetupPage : Page
         }
         StepsList.ItemsSource = null;
         StepsList.ItemsSource = _steps;
-        bool done = _steps.All(s => s.Optional || s.State == StepState.Ok);
+        bool cloud = (AppPaths.LoadSettings()["image_provider"]?.GetValue<string>() ?? "comfy") != "comfy";
+        bool done = _steps.Where(s => cloud ? s.Id is "runtime" or "deps" : !s.Optional).All(s => s.State == StepState.Ok);
+        DoneBar.Title = cloud ? L.Z("云端模式已就绪", "Cloud mode is ready") : L.Z("环境就绪", "All set");
+        DoneBar.Message = cloud
+            ? L.Z("无需下载图像模型权重；在“图像生成”中配置 API 即可。", "No image model weights are required. Configure the API under Image generation.")
+            : L.Z("所有组件已安装。前往“卡牌”页开始创作。", "Everything is installed. Head to Cards to start.");
         DoneBar.IsOpen = done;
         App.Main.MarkSetupDone(done);
     }
@@ -138,7 +174,8 @@ public sealed partial class SetupPage : Page
             disk += k;
         }
 
-        var problems = Gpu.Warnings(Gpu.Package).Where(w => w.Severe).Select(w => w.Text).ToList();
+        bool cloud = (AppPaths.LoadSettings()["image_provider"]?.GetValue<string>() ?? "comfy") != "comfy";
+        List<string> problems = cloud ? [] : Gpu.Warnings(Gpu.Package).Where(w => w.Severe).Select(w => w.Text).ToList();
         try
         {
             var free = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(AppPaths.Root))!).AvailableFreeSpace;
@@ -213,11 +250,209 @@ public sealed partial class SetupPage : Page
             _cts = null;
         }
         await CheckAll();
-        if (_steps.All(s => s.Optional || s.State == StepState.Ok)) await App.Main.RestartBackend();
+        bool cloud = (AppPaths.LoadSettings()["image_provider"]?.GetValue<string>() ?? "comfy") != "comfy";
+        if (_steps.Where(s => cloud ? s.Id is "runtime" or "deps" : !s.Optional).All(s => s.State == StepState.Ok))
+            await App.Main.RestartBackend();
     }
 
-    async void InstallAll_Click(object sender, RoutedEventArgs e) =>
+    static string Str(JsonNode? node, string fallback = "") => node?.GetValue<string>() ?? fallback;
+
+    void Sections_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    {
+        var item = sender.SelectedItem;
+        ImageSection.Visibility = item == ImageSectionItem ? Visibility.Visible : Visibility.Collapsed;
+        PromptSection.Visibility = item == PromptSectionItem ? Visibility.Visible : Visibility.Collapsed;
+        LocalSection.Visibility = item == LocalSectionItem ? Visibility.Visible : Visibility.Collapsed;
+        SectionScroll.ChangeView(null, 0, null, true);
+    }
+
+    /// <summary>The saved image mode: shown in the header, and the active mode's button is highlighted.</summary>
+    void ShowMode()
+    {
+        bool cloud = Str(_serviceSettings["image_provider"], "comfy") != "comfy";
+        var preset = ImagePresets.FirstOrDefault(p => p.Id == Str(_serviceSettings["image_preset"]));
+        ModeText.Text = cloud
+            ? L.Z("当前出图方式：云端 API", "Current image mode: cloud API") + (preset != null ? $" · {preset.Name}" : "")
+            : L.Z("当前出图方式：本地 ComfyUI", "Current image mode: local ComfyUI");
+        var accent = (Style)Application.Current.Resources["AccentButtonStyle"];
+        LocalModeBtn.Style = cloud ? null : accent;
+        CloudModeBtn.Style = cloud ? accent : null;
+    }
+
+    void ShowPromptPreset(LlmPreset preset, bool fromSettings)
+    {
+        bool claude = preset.Provider == "anthropic", enabled = preset.Provider != "template";
+        LlmFields.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+        BaseUrlBox.Visibility = Visibility.Visible;
+        EffortBox.Visibility = Visibility.Collapsed;
+        KeyHint.Text = preset.KeyHint;
+        if (claude)
+        {
+            bool same = fromSettings || Str(_serviceSettings["llm_preset"]) == preset.Id;
+            BaseUrlBox.Text = same ? Str(_serviceSettings["anthropic_base_url"], preset.BaseUrl) : preset.BaseUrl;
+            ModelBox.Text = fromSettings ? Str(_serviceSettings["anthropic_model"], preset.Model) : preset.Model;
+            KeyBox.Password = Str(_serviceSettings["anthropic_api_key"]);
+        }
+        else if (enabled)
+        {
+            bool same = fromSettings || Str(_serviceSettings["llm_preset"]) == preset.Id;
+            BaseUrlBox.Text = same ? Str(_serviceSettings["openai_base_url"], preset.BaseUrl) : preset.BaseUrl;
+            ModelBox.Text = same ? Str(_serviceSettings["openai_model"], preset.Model) : preset.Model;
+            KeyBox.Password = same ? Str(_serviceSettings["openai_api_key"]) : "";
+        }
+    }
+
+    void PresetBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_serviceLoading && PresetBox.SelectedItem is LlmPreset preset) ShowPromptPreset(preset, fromSettings: false);
+    }
+
+    void ShowImagePreset(ImagePreset preset, bool fromSettings)
+    {
+        bool cloud = preset.Provider != "comfy";
+        ImageApiFields.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
+        ImageKeyHint.Text = preset.KeyHint;
+        if (!cloud) return;
+        bool same = fromSettings || Str(_serviceSettings["image_preset"]) == preset.Id;
+        var endpoint = same ? Str(_serviceSettings["image_api_base_url"], preset.BaseUrl) : preset.BaseUrl;
+        if (preset.Id == "siliconflow") endpoint = endpoint.Replace("https://api.siliconflow.com", "https://api.siliconflow.cn", StringComparison.OrdinalIgnoreCase);
+        ImageEndpointBox.Text = endpoint;
+        ImageModelBox.Text = same ? Str(_serviceSettings["image_api_model"], preset.Model) : preset.Model;
+        ImageKeyBox.Password = same ? Str(_serviceSettings["image_api_key"]) : "";
+        CloudConcurrencyBox.Value = same ? _serviceSettings["cloud_concurrency"]?.GetValue<int>() ?? 3 : 3;
+        ImageExtraBox.Text = same ? Str(_serviceSettings["image_api_extra"], preset.Extra) : preset.Extra;
+        var quality = same ? Str(_serviceSettings["image_api_quality"], "auto") : "auto";
+        ImageQualityBox.SelectedItem = new[] { "auto", "low", "medium", "high" }.Contains(quality) ? quality : "auto";
+    }
+
+    void ImagePresetBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_serviceLoading && ImagePresetBox.SelectedItem is ImagePreset preset) ShowImagePreset(preset, fromSettings: false);
+    }
+
+    JsonObject BuildServicePatch()
+    {
+        var prompt = (LlmPreset)PresetBox.SelectedItem;
+        var image = (ImagePreset)ImagePresetBox.SelectedItem;
+        var patch = new JsonObject
+        {
+            ["llm_preset"] = prompt.Id,
+            ["llm_provider"] = prompt.Provider,
+            ["image_preset"] = image.Id,
+            ["image_provider"] = image.Provider,
+            ["prompt_system"] = SystemPromptBox.Text.Replace("\r\n", "\n").Replace("\r", "\n"),
+            ["prompt_template"] = TemplateBox.Text.Trim(),
+        };
+        if (image.Provider != "comfy")
+        {
+            patch["image_api_base_url"] = ImageEndpointBox.Text.Trim();
+            patch["image_api_model"] = ImageModelBox.Text.Trim();
+            patch["image_api_key"] = ImageKeyBox.Password.Trim();
+            patch["image_api_quality"] = ImageQualityBox.SelectedItem as string ?? "auto";
+            patch["cloud_concurrency"] = (int)CloudConcurrencyBox.Value;
+            patch["image_api_extra"] = string.IsNullOrWhiteSpace(ImageExtraBox.Text) ? "{}" : ImageExtraBox.Text.Trim();
+        }
+        if (prompt.Provider == "anthropic")
+        {
+            patch["anthropic_base_url"] = BaseUrlBox.Text.Trim();
+            patch["anthropic_model"] = ModelBox.Text.Trim();
+            patch["anthropic_api_key"] = KeyBox.Password.Trim();
+            patch["anthropic_effort"] = EffortBox.SelectedItem as string ?? "medium";
+        }
+        else if (prompt.Provider == "openai")
+        {
+            patch["openai_base_url"] = BaseUrlBox.Text.Trim();
+            patch["openai_model"] = ModelBox.Text.Trim();
+            patch["openai_api_key"] = KeyBox.Password.Trim();
+        }
+        return patch;
+    }
+
+    async Task<bool> SaveServiceConfigAsync()
+    {
+        try
+        {
+            if (ImagePresetBox.SelectedItem is ImagePreset { Provider: not "comfy" } &&
+                JsonNode.Parse(string.IsNullOrWhiteSpace(ImageExtraBox.Text) ? "{}" : ImageExtraBox.Text) is not JsonObject)
+                throw new FormatException(L.Z("图像 API 的额外参数必须是 JSON 对象。", "Image API extra parameters must be a JSON object."));
+            var previousImageProvider = Str(_serviceSettings["image_provider"], "comfy");
+            var patch = BuildServicePatch();
+            try { _serviceSettings = await Api.Put<JsonObject>("/api/settings", patch); }
+            catch
+            {
+                // The app can be in first-run setup before the local backend is available.
+                AppPaths.SaveSettings(settings =>
+                {
+                    foreach (var pair in patch) settings[pair.Key] = pair.Value?.DeepClone();
+                });
+                _serviceSettings = AppPaths.LoadSettings();
+            }
+            App.Main.ShowInfo(L.Z("配置已保存。", "Configuration saved."));
+            ShowMode();
+            if (previousImageProvider != Str(_serviceSettings["image_provider"], "comfy")) await CheckAll();
+            return true;
+        }
+        catch (Exception ex) { App.Main.ShowError(ex.Message); return false; }
+    }
+
+    async void SaveServiceConfig_Click(object sender, RoutedEventArgs e) => await SaveServiceConfigAsync();
+
+    async void ResetSystemPrompt_Click(object sender, RoutedEventArgs e)
+    {
+        await Meta.Load();
+        SystemPromptBox.Text = Meta.Info.DefaultPromptSystem;
+    }
+
+    async void ResetTemplate_Click(object sender, RoutedEventArgs e)
+    {
+        await Meta.Load();
+        TemplateBox.Text = Meta.Info.DefaultPromptTemplate;
+    }
+
+    async void TestLlm_Click(object sender, RoutedEventArgs e)
+    {
+        TestRing.IsActive = true;
+        TestResult.Text = "";
+        try
+        {
+            var result = await Api.Post<PromptResult>("/api/prompt", new
+            {
+                name = L.Z("袖中刃", "Sleeve Blade"), cls = "silent", type = "attack", rarity = "common", cost = "1",
+                description = L.Z("造成 6 点伤害。", "Deal 6 damage."), concept = "", _settings = BuildServicePatch(),
+            });
+            TestResult.Text = "✓ " + result.Prompt + (result.Notes.Length > 0 ? "\n" + result.Notes : "");
+        }
+        catch (Exception ex) { TestResult.Text = "✗ " + ex.Message; }
+        finally { TestRing.IsActive = false; }
+    }
+
+    async void UseLocalMode_Click(object sender, RoutedEventArgs e)
+    {
+        Sections.SelectedItem = LocalSectionItem;   // where the model files are installed
+        ImagePresetBox.SelectedItem = ImagePresets.First(p => p.Provider == "comfy");
+        if (!await SaveServiceConfigAsync()) return;
+        App.Main.ShowInfo(L.Z("已切换到本地模式；需要模型文件时可在此页安装。", "Switched to local mode. Install the model files here if needed."));
+    }
+
+    async void UseCloud_Click(object sender, RoutedEventArgs e)
+    {
+        Sections.SelectedItem = ImageSectionItem;   // where the API key is entered
+        if (ImagePresetBox.SelectedItem is not ImagePreset selected || selected.Provider == "comfy")
+        {
+            var preset = ImagePresets.First(p => p.Id == "siliconflow");
+            ImagePresetBox.SelectedItem = preset;
+            ShowImagePreset(preset, fromSettings: false);
+        }
+        if (!await SaveServiceConfigAsync()) return;
+        await RunSteps(_steps.Where(s => s.Id is "runtime" or "deps"));
+    }
+
+    async void InstallAll_Click(object sender, RoutedEventArgs e)
+    {
+        ImagePresetBox.SelectedItem = ImagePresets.First(p => p.Provider == "comfy");
+        if (!await SaveServiceConfigAsync()) return;
         await RunSteps(_steps.Where(s => !s.Optional || IncludeLora.IsChecked == true));
+    }
 
     async void InstallOne_Click(object sender, RoutedEventArgs e)
     {

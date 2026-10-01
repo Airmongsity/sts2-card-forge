@@ -1,0 +1,89 @@
+<Page
+    x:Class="CardForge.Views.TemplatesPage"
+    NavigationCacheMode="Required"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:s="using:CardForge.Services"
+    xmlns:local="using:CardForge.Views">
+    <Page.Resources>
+        <DataTemplate x:Key="ReferenceAssetCard" x:DataType="s:ReferenceAsset">
+            <Border Width="210" Padding="8" Margin="4" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel Spacing="6">
+                    <Border Height="150" Background="{ThemeResource ControlFillColorDefaultBrush}" CornerRadius="5">
+                        <s:LocalImage Path="{x:Bind Path}" DecodeWidth="320" Stretch="Uniform" />
+                    </Border>
+                    <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{x:Bind Detail}" Style="{StaticResource Hint}" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+        <DataTemplate x:Key="ReferenceAssetSection" x:DataType="local:AssetSection">
+            <Expander IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}" Margin="0,0,0,8"
+                      HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                <Expander.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="{x:Bind Title}" Style="{StaticResource SubtitleTextBlockStyle}" />
+                        <TextBlock Text="{x:Bind Count, Mode=OneWay}" Style="{StaticResource Hint}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Expander.Header>
+                <GridView ItemsSource="{x:Bind Assets}" ItemTemplate="{StaticResource ReferenceAssetCard}"
+                          SelectionMode="Single" SelectionChanged="AssetGrid_SelectionChanged"
+                          MaxHeight="460" ScrollViewer.VerticalScrollMode="Enabled"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto" />
+            </Expander>
+        </DataTemplate>
+    </Page.Resources>
+    <Grid Padding="20" RowSpacing="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <StackPanel Spacing="4">
+            <TextBlock Text="{x:Bind s:L.Z('本地模板库','Local template library')}" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock Text="{x:Bind s:L.Z('解析和索引在本机完成。使用云端图像 API 时，所选参考图会随生成请求发送给该提供商。','Parsing and indexing happen on this computer. When using a cloud image API, selected references are sent to that provider with the generation request.')}"
+                       Style="{StaticResource Hint}" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <Border Grid.Row="1" Padding="14" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+            <StackPanel Spacing="10">
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBox x:Name="GameRootBox" Header="{x:Bind s:L.Z('游戏目录或已解包素材目录','Game or extracted-assets folder')}" />
+                    <Button Grid.Column="1" VerticalAlignment="Bottom" Content="…" Click="PickGame_Click" />
+                    <Button Grid.Column="2" VerticalAlignment="Bottom" Content="{x:Bind s:L.Z('检测运行实例','Detect running game')}" Click="DetectGame_Click" />
+                </Grid>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="ExtractBtn" Style="{StaticResource AccentButtonStyle}" Content="{x:Bind s:L.Z('解包并导入','Extract &amp; import')}" Click="Extract_Click" />
+                    <Button x:Name="ScanBtn" Content="{x:Bind s:L.Z('重新扫描','Rescan')}" Click="Scan_Click" />
+                    <Button Content="{x:Bind s:L.Z('导入单张图片','Import one image')}" Click="ImportOne_Click" />
+                    <CheckBox x:Name="IncludeInternalBox" Content="{x:Bind s:L.Z('导出内建资源','Export internal resources')}"
+                              IsChecked="False" VerticalAlignment="Center" Click="IncludeInternal_Click"
+                              ToolTipService.ToolTip="{x:Bind s:L.Z('扫描并导入没有官方本地化名称的游戏内纹理、特效和开发资源','Scan and import game-internal textures, effects, and development assets without official localized names')}" />
+                    <ProgressRing x:Name="Busy" Width="22" Height="22" IsActive="False" />
+                </StackPanel>
+                <ProgressBar x:Name="InstallProgress" Minimum="0" Maximum="100" Height="6" Visibility="Collapsed" IsIndeterminate="False" />
+                <TextBlock x:Name="ScanStatus" Style="{StaticResource Hint}" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Row="2" Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="{x:Bind s:L.Z('已导入模板','Imported templates')}" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
+                <Button Content="{x:Bind s:L.Z('刷新','Refresh')}" Click="Refresh_Click" />
+                <Button x:Name="DeleteBtn" Content="{x:Bind s:L.Z('删除选中','Delete selected')}" IsEnabled="False" Click="Delete_Click" />
+                <ComboBox x:Name="RoleBox" Width="180" IsEnabled="False" DisplayMemberPath="Name" SelectedValuePath="Id" />
+                <Button x:Name="SaveRoleBtn" Content="{x:Bind s:L.Z('保存素材设置','Save asset settings')}" IsEnabled="False" Click="SaveRole_Click" />
+                <TextBox x:Name="AssetSearchBox" Width="260" PlaceholderText="{x:Bind s:L.Z('搜索名称、类别或来源…','Search name, category, or source…')}"
+                         TextChanged="AssetSearchBox_TextChanged" />
+            </StackPanel>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{x:Bind Sections}" ItemTemplate="{StaticResource ReferenceAssetSection}" />
+        </ScrollViewer>
+    </Grid>
+</Page>

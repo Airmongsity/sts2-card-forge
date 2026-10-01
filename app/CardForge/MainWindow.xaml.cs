@@ -55,8 +55,9 @@ public sealed partial class MainWindow : Window
         await Gpu.Detect();
         Gpu.Publish();
         var steps = Setup.CreateSteps();
+        bool cloud = (AppPaths.LoadSettings()["image_provider"]?.GetValue<string>() ?? "comfy") != "comfy";
         bool allOk = true;
-        foreach (var s in steps.Where(s => !s.Optional)) allOk &= await s.Check();
+        foreach (var s in steps.Where(s => cloud ? s.Id is "runtime" or "deps" : !s.Optional)) allOk &= await s.Check();
         SetupBadge.Visibility = allOk ? Visibility.Collapsed : Visibility.Visible;
 
         if (await BackendHost.EnsureRunning())
@@ -111,7 +112,7 @@ public sealed partial class MainWindow : Window
             OpenUrl(u.PageUrl);
             return;
         }
-        if (Status?.Worker is { } w && (w.Current != null || w.Queued > 0))
+        if (Status?.Worker is { } w && (w.Current != null || w.CloudActive > 0 || w.Queued > 0))
         {
             ShowError(L.Z("生成队列还有任务，请等它们完成（或暂停并清空）后再更新。", "The queue still has jobs; let them finish (or pause and clear it) before updating."));
             return;
@@ -185,8 +186,9 @@ public sealed partial class MainWindow : Window
 
     static readonly Dictionary<Type, string> PageTags = new()
     {
-        [typeof(CardsPage)] = "cards", [typeof(CharactersPage)] = "characters", [typeof(QueuePage)] = "queue",
-        [typeof(GalleryPage)] = "gallery", [typeof(SetupPage)] = "setup", [typeof(SettingsPage)] = "settings",
+        [typeof(CardsPage)] = "cards", [typeof(CharactersPage)] = "characters", [typeof(TemplatesPage)] = "templates", [typeof(QueuePage)] = "queue",
+        [typeof(GalleryPage)] = "gallery", [typeof(LogsPage)] = "logs", [typeof(SetupPage)] = "setup",
+        [typeof(SettingsPage)] = "settings",
     };
 
     public void NavigateTo(Type page)
@@ -204,8 +206,10 @@ public sealed partial class MainWindow : Window
         {
             "cards" => typeof(CardsPage),
             "characters" => typeof(CharactersPage),
+            "templates" => typeof(TemplatesPage),
             "queue" => typeof(QueuePage),
             "gallery" => typeof(GalleryPage),
+            "logs" => typeof(LogsPage),
             "setup" => typeof(SetupPage),
             "settings" => typeof(SettingsPage),
             _ => null,
@@ -232,16 +236,17 @@ public sealed partial class MainWindow : Window
 
     void UpdateCpuChip()
     {
-        bool cpu = Gpu.IsCpu;
+        bool cpu = Gpu.IsCpu && (Status?.ImageProvider ?? "comfy") == "comfy";
         CpuChip.Visibility = cpu ? Visibility.Visible : Visibility.Collapsed;
         if (!cpu) return;
         CpuChipText.Text = L.Z("CPU 模式（极慢）", "CPU mode (very slow)");
-        ToolTipService.SetToolTip(CpuChip, Gpu.CpuReason() + L.Z("可在“环境安装 → 运行包”中更改。", "Change it under Setup → Package."));
+        ToolTipService.SetToolTip(CpuChip, Gpu.CpuReason() + L.Z("可在“配置 → 运行包”中更改。", "Change it under Configuration → Package."));
     }
 
     /// <summary>Before queueing images on a CPU-only setup: warn that each image takes hours (with "don't ask again").</summary>
     public async Task<bool> ConfirmCpuGeneration()
     {
+        if ((AppPaths.LoadSettings()["image_provider"]?.GetValue<string>() ?? "comfy") != "comfy") return true;
         if (!Gpu.IsCpu || AppPaths.LoadSettings()["cpu_warning_ack"]?.GetValue<bool>() == true) return true;
         var dontAsk = new CheckBox { Content = L.Z("不再提示", "Don't ask again") };
         var dialog = new ContentDialog
@@ -289,30 +294,36 @@ public sealed partial class MainWindow : Window
         BackendDot.Fill = Brush(80, 190, 110);
         BackendText.Text = L.Z("后端 ", "Backend ") + Status.Version;
 
+        bool cloud = Status.ImageProvider != "comfy";
         var c = Status.Comfy;
-        (ComfyDot.Fill, ComfyText.Text) = c.State switch
-        {
-            "ready" => (Brush(80, 190, 110), "ComfyUI " + L.Z("就绪", "ready")),
-            "external" => (Brush(80, 190, 110), "ComfyUI " + L.Z("就绪（外部进程）", "ready (external)")),
-            "starting" => (Brush(230, 170, 60), "ComfyUI " + L.Z("启动中…", "starting…")),
-            "error" => (Brush(230, 80, 70), "ComfyUI: " + c.Error),
-            _ => (Brush(128, 128, 128), "ComfyUI " + L.Z("未启动（生成时自动启动）", "stopped (starts on demand)")),
-        };
+        (ComfyDot.Fill, ComfyText.Text) = cloud
+            ? (Brush(80, 150, 220), L.Z("云端图像 API", "Cloud image API"))
+            : c.State switch
+            {
+                "ready" => (Brush(80, 190, 110), "ComfyUI " + L.Z("就绪", "ready")),
+                "external" => (Brush(80, 190, 110), "ComfyUI " + L.Z("就绪（外部进程）", "ready (external)")),
+                "starting" => (Brush(230, 170, 60), "ComfyUI " + L.Z("启动中…", "starting…")),
+                "error" => (Brush(230, 80, 70), "ComfyUI: " + c.Error),
+                _ => (Brush(128, 128, 128), "ComfyUI " + L.Z("未启动（生成时自动启动）", "stopped (starts on demand)")),
+            };
 
+        // w.Current is the local ComfyUI job only; cloud jobs run in parallel and are counted in CloudActive
         var w = Status.Worker;
         var parts = new List<string>();
-        bool loading = w.Current != null && w.Step <= 0;
-        if (w.Current != null) parts.Add(loading ? L.Z("正在加载模型…", "Loading models…") : L.Z("生成中 ", "Generating ") + $"{w.Step}/{w.Steps}");
+        bool local = w.Current != null, loading = local && w.Step <= 0;
+        if (local) parts.Add(loading ? L.Z("正在加载模型…", "Loading models…") : L.Z("生成中 ", "Generating ") + $"{w.Step}/{w.Steps}");
+        if (w.CloudActive > 0) parts.Add(L.Z($"云端生成中 {w.CloudActive}/{w.CloudConcurrency}", $"Cloud generating {w.CloudActive}/{w.CloudConcurrency}"));
         if (w.Queued > 0) parts.Add(L.Z($"排队 {w.Queued}", $"{w.Queued} queued"));
         if (w.Cooling && w.CoolReason != "heat") parts.Add(L.Z($"间隔等待 {w.CooldownLeft}s", $"waiting {w.CooldownLeft}s"));
-        UpdateTempChip(Status.Gpu, w, Status.Thermal ?? new ThermalLimits());
+        UpdateTempChip(cloud ? null : Status.Gpu, w, Status.Thermal ?? new ThermalLimits());
         if (w.Paused) parts.Add(L.Z("已暂停", "paused"));
         WorkerText.Text = string.Join("  ·  ", parts);
-        WorkerBar.Visibility = w.Current != null ? Visibility.Visible : Visibility.Collapsed;
-        WorkerBar.IsIndeterminate = loading;
-        WorkerBar.Value = w.Steps > 0 ? 100.0 * w.Step / w.Steps : 0;
+        WorkerBar.Visibility = local || w.CloudActive > 0 ? Visibility.Visible : Visibility.Collapsed;
+        // cloud APIs report no step progress, so the bar only shows that work is going on
+        WorkerBar.IsIndeterminate = !local || loading;
+        WorkerBar.Value = local && w.Steps > 0 ? 100.0 * w.Step / w.Steps : 0;
 
-        int active = w.Queued + (w.Current != null ? 1 : 0);
+        int active = w.Queued + (local ? 1 : 0) + w.CloudActive;
         QueueBadge.Visibility = active > 0 ? Visibility.Visible : Visibility.Collapsed;
         QueueBadge.Value = active;
     }
@@ -380,6 +391,14 @@ public sealed partial class MainWindow : Window
         foreach (var e in extensions) p.FileTypeFilter.Add(e);
         WinRT.Interop.InitializeWithWindow.Initialize(p, Hwnd);
         return (await p.PickSingleFileAsync())?.Path;
+    }
+
+    public async Task<IReadOnlyList<string>> PickFiles(params string[] extensions)
+    {
+        var p = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.PicturesLibrary };
+        foreach (var e in extensions) p.FileTypeFilter.Add(e);
+        WinRT.Interop.InitializeWithWindow.Initialize(p, Hwnd);
+        return (await p.PickMultipleFilesAsync()).Select(file => file.Path).ToList();
     }
 
     public async Task<string?> PickFolder()
