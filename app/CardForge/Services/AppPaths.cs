@@ -70,8 +70,11 @@ public static class AppPaths
     /// <summary>ComfyUI's own Python (PyTorch etc.): runs ComfyUI, its pip installs and the GPU self-test.</summary>
     public static string Python => Path.Combine(ComfyRoot, "python_embeded", "python.exe");
 
-    /// <summary>Releases ship python\ with the backend's packages, so cloud mode needs no ComfyUI download.</summary>
-    public static string BundledPython => Path.Combine(Root, "python", "python.exe");
+    /// <summary>Releases ship app\python\ with the backend's packages, so cloud mode needs no ComfyUI download.
+    /// It lives inside app\ because every updater mirrors app\; 0.4.1 put it at the root, which updaters skipped.</summary>
+    public static string BundledPython =>
+        new[] { Path.Combine(AppContext.BaseDirectory, "python", "python.exe"), Path.Combine(Root, "python", "python.exe") }
+            .FirstOrDefault(File.Exists) ?? Path.Combine(AppContext.BaseDirectory, "python", "python.exe");
     public static bool HasBundledPython => File.Exists(BundledPython);
 
     /// <summary>The Python that runs the backend: the bundled one, else (a source checkout) ComfyUI's.</summary>

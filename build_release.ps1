@@ -2,8 +2,8 @@
 #   dist\STS2CardForge\
 #     STS2 Card Forge.bat      <- double-click to start
 #     app\CardForge.exe        (self-contained .NET + Windows App SDK, no installs needed)
+#     app\python\              (embeddable Python + the backend's packages; runs the backend)
 #     backend\                 (Python API server)
-#     python\                  (embeddable Python + the backend's packages; runs the backend)
 #     examples\                (sample cards + art seeded into the Examples project on first run)
 #     README.md, NOTICE, VERSION
 # Nothing heavy is bundled: the Setup page checks the machine first and only then downloads ComfyUI (the package
@@ -48,7 +48,8 @@ if (-not (Test-Path $pyZip)) {
     Invoke-WebRequest "https://www.python.org/ftp/python/$pyVersion/python-$pyVersion-embed-amd64.zip" -OutFile $pyZip -UseBasicParsing
 }
 if ((Get-FileHash $pyZip -Algorithm SHA256).Hash -ne $pySha256) { Remove-Item $pyZip; throw "embeddable Python checksum mismatch" }
-$py = Join-Path $dist "python"
+# inside app\ on purpose: every updater, including 0.4.0's, mirrors app\ wholesale, so existing installs receive it
+$py = Join-Path $dist "app\python"
 Expand-Archive $pyZip $py
 # the embeddable build ignores site-packages until "import site" is enabled in its ._pth file
 $pth = Get-ChildItem $py -Filter "python*._pth" | Select-Object -First 1

@@ -10,7 +10,7 @@ namespace CardForge.Services;
 public sealed record UpdateInfo(Version Version, string Tag, string Notes, string PageUrl, string? ZipUrl, long Size);
 
 /// <summary>Checks GitHub releases for a newer version and installs it: downloads the release zip, then a small script
-/// waits for the app to exit, mirrors app/ backend/ examples/ python/ over this install (data/ and ComfyUI are untouched)
+/// waits for the app to exit, mirrors app/ backend/ examples/ over this install (data/ and ComfyUI are untouched)
 /// and restarts the app.</summary>
 public static class Updater
 {
@@ -152,8 +152,8 @@ public static class Updater
             .AppendLine("tasklist /FI \"PID eq %PID%\" /FO CSV /NH 2>nul | find /I \"CardForge\" >nul && (timeout /t 1 /nobreak >nul & goto wait)")
             .AppendLine("timeout /t 2 /nobreak >nul")   // let the backend and ComfyUI (same job object) finish exiting
             .AppendLine($"echo %date% %time% updating > \"{log}\"");
-        // python\ is the backend's bundled runtime (0.4.0 and later); older zips have none, so it is skipped when absent
-        foreach (var d in new[] { "app", "backend", "examples", "python" })
+        // the bundled Python is app\python\, so it comes with app\; nothing else needs copying
+        foreach (var d in new[] { "app", "backend", "examples" })
             bat.AppendLine($"if exist \"{Path.Combine(newRoot, d)}\" robocopy \"{Path.Combine(newRoot, d)}\" \"{Path.Combine(root, d)}\" /MIR /R:5 /W:2 /NFL /NDL /NP >> \"{log}\"")
                .AppendLine($"if errorlevel 8 goto failed");
         foreach (var f in new[] { "README.md", "NOTICE", "VERSION", "STS2 Card Forge.bat" })
