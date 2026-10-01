@@ -139,7 +139,7 @@ public sealed partial class SetupPage : Page
         StepsList.ItemsSource = null;
         StepsList.ItemsSource = _steps;
         bool cloud = (AppPaths.LoadSettings()["image_provider"]?.GetValue<string>() ?? "comfy") != "comfy";
-        bool done = _steps.Where(s => cloud ? s.Id is "runtime" or "deps" : !s.Optional).All(s => s.State == StepState.Ok);
+        bool done = _steps.Where(s => Setup.Required(s, cloud)).All(s => s.State == StepState.Ok);
         DoneBar.Title = cloud ? L.Z("云端模式已就绪", "Cloud mode is ready") : L.Z("环境就绪", "All set");
         DoneBar.Message = cloud
             ? L.Z("无需下载图像模型权重；在“图像生成”中配置 API 即可。", "No image model weights are required. Configure the API under Image generation.")
@@ -251,7 +251,7 @@ public sealed partial class SetupPage : Page
         }
         await CheckAll();
         bool cloud = (AppPaths.LoadSettings()["image_provider"]?.GetValue<string>() ?? "comfy") != "comfy";
-        if (_steps.Where(s => cloud ? s.Id is "runtime" or "deps" : !s.Optional).All(s => s.State == StepState.Ok))
+        if (_steps.Where(s => Setup.Required(s, cloud)).All(s => s.State == StepState.Ok))
             await App.Main.RestartBackend();
     }
 
@@ -444,7 +444,15 @@ public sealed partial class SetupPage : Page
             ShowImagePreset(preset, fromSettings: false);
         }
         if (!await SaveServiceConfigAsync()) return;
-        await RunSteps(_steps.Where(s => s.Id is "runtime" or "deps"));
+        var needed = _steps.Where(s => Setup.Required(s, cloud: true)).ToList();
+        if (needed.All(s => s.State == StepState.Ok))
+        {
+            // a release has nothing to install for cloud mode; just make sure the backend is up
+            await App.Main.RestartBackend();
+            App.Main.ShowInfo(L.Z("已切换到云端模式，无需下载。", "Switched to cloud mode; nothing to download."));
+            return;
+        }
+        await RunSteps(needed);
     }
 
     async void InstallAll_Click(object sender, RoutedEventArgs e)

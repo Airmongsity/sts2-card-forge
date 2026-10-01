@@ -208,9 +208,12 @@ public static class Setup
         {
             Id = "deps",
             Title = L.Z("后端依赖", "Backend packages"),
-            Description = L.Z("安装到 ComfyUI 的 Python 中：anthropic（Claude 提示词生成）。", "Installed into ComfyUI's Python: anthropic (Claude prompt generation)."),
+            Description = AppPaths.HasBundledPython
+                ? L.Z("已随应用附带（aiohttp、Pillow、anthropic），无需下载。", "Bundled with the app (aiohttp, Pillow, anthropic); nothing to download.")
+                : L.Z("安装到 ComfyUI 的 Python 中：anthropic（Claude 提示词生成）。", "Installed into ComfyUI's Python: anthropic (Claude prompt generation)."),
             Check = async () =>
             {
+                if (AppPaths.HasBundledPython) return true;   // a release: the backend has its own Python and packages
                 if (!File.Exists(AppPaths.Python)) return false;
                 if (AppPaths.LoadSettings()["deps_ok"]?.GetValue<string>() == DepsKey) return true;
                 var ok = (await Run(AppPaths.Python, ["-s", "-c", "import anthropic"], null, null, default)).Code == 0;
@@ -284,6 +287,11 @@ public static class Setup
             Install = InstallLora,
         },
     ];
+
+    /// <summary>Whether the image mode needs this step. Cloud mode only needs the backend: on a release (bundled
+    /// Python) that is nothing to install; in a source checkout the backend runs on ComfyUI's Python.</summary>
+    public static bool Required(SetupStep s, bool cloud) =>
+        cloud ? (AppPaths.HasBundledPython ? s.Id == "deps" : s.Id is "runtime" or "deps") : !s.Optional;
 
     public static bool RuntimeOk(out string problem)
     {

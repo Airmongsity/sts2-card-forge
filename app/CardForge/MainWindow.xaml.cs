@@ -57,7 +57,7 @@ public sealed partial class MainWindow : Window
         var steps = Setup.CreateSteps();
         bool cloud = (AppPaths.LoadSettings()["image_provider"]?.GetValue<string>() ?? "comfy") != "comfy";
         bool allOk = true;
-        foreach (var s in steps.Where(s => cloud ? s.Id is "runtime" or "deps" : !s.Optional)) allOk &= await s.Check();
+        foreach (var s in steps.Where(s => Setup.Required(s, cloud))) allOk &= await s.Check();
         SetupBadge.Visibility = allOk ? Visibility.Collapsed : Visibility.Visible;
 
         if (await BackendHost.EnsureRunning())

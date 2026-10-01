@@ -4,14 +4,14 @@ using System.Text;
 
 namespace CardForge.Services;
 
-/// <summary>Starts backend/server.py on ComfyUI's embedded Python. The process is placed in a job object so it
-/// (and the ComfyUI it spawns) dies with the app, even on a crash.</summary>
+/// <summary>Starts backend/server.py on the bundled Python (AppPaths.BackendPython). The process is placed in a job
+/// object so it (and the ComfyUI it spawns) dies with the app, even on a crash.</summary>
 public static class BackendHost
 {
     static Process? _proc;
     static readonly StringBuilder Log = new();
     public static string LogText { get { lock (Log) return Log.ToString(); } }
-    public static bool CanStart => File.Exists(AppPaths.Python) && File.Exists(Path.Combine(AppPaths.Backend, "server.py"));
+    public static bool CanStart => File.Exists(AppPaths.BackendPython) && File.Exists(Path.Combine(AppPaths.Backend, "server.py"));
 
     public static async Task<bool> EnsureRunning()
     {
@@ -19,7 +19,7 @@ public static class BackendHost
         if (!CanStart) return false;
         if (_proc is { HasExited: false }) _proc.Kill(true);
 
-        var psi = new ProcessStartInfo(AppPaths.Python)
+        var psi = new ProcessStartInfo(AppPaths.BackendPython)
         {
             WorkingDirectory = AppPaths.Root,
             UseShellExecute = false,

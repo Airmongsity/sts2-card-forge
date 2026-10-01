@@ -2,7 +2,7 @@
 
     python backend/server.py [--port 8190]
 
-Runs on ComfyUI's embedded Python (aiohttp and Pillow come with ComfyUI; `anthropic` is installed by setup).
+Releases run it on the bundled python\ (packages from requirements.txt); a source checkout uses ComfyUI's Python.
 Listens on 127.0.0.1 only.
 """
 import argparse

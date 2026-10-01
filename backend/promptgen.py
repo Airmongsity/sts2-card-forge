@@ -383,7 +383,7 @@ def _append_theme(prompt, card, lang):
 # ---- providers -------------------------------------------------------------------------------
 
 async def _anthropic(settings, system, user, schema):
-    import anthropic  # installed by setup into ComfyUI's python
+    import anthropic  # bundled with releases; setup installs it into ComfyUI's Python for a source checkout
 
     key = settings.get("anthropic_api_key") or None
     base_url = settings.get("anthropic_base_url") or None
